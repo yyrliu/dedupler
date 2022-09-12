@@ -1,0 +1,26 @@
+{
+    "folder1": {
+        ".txt": [
+            { "name": "test2", "content": "folder1_text_test2" },
+            { "name": "test3", "content": "folder1_text_test3" },
+            { "name": "test1", "content": "folder1_text_test1" },
+            { "name": "dup_test1", "content": "dup_text_test1" },
+            { "name": "dup_test2", "content": "dup_text_test2" },
+            { "name": "dup_test3", "content": "dup_text_test3" }
+        ],
+        "f2":{
+            ".txt": [
+                { "name": "test2", "content": "folder1_f2_text_test2" }
+            ]
+        }
+    },
+    "folder2": {
+        ".txt": [
+            { "name": "test1", "content": "folder2_text_test1" },
+            { "name": "test2", "content": "folder2_text_test2" },
+            { "name": "dup_test1", "content": "dup_text_test1" },
+            { "name": "dup_test2", "content": "dup_text_test2" },
+            { "name": "dup_test3", "content": "dup_text_test3" }
+        ]
+    }
+}
