@@ -20,6 +20,9 @@ class Database():
     def _executeScript(self, script):
         self.curs.executescript(script)
 
+    def _lastRowID(self):
+        return self.curs.lastrowid
+
     def _dropAll(self):
         self._executeScript("""--sql
             DROP TABLE IF EXISTS files;
@@ -71,6 +74,34 @@ class Database():
         print(pd.read_sql_query(f"SELECT * FROM {table}", self.conn))
         print("\n----- " + f'End of table "{table}"' " -----\n" )
 
+    def insertFile(self, path, size, md5):
+        res = self._execute("""--sql
+                SELECT id, duplicate_id
+                FROM files AS f
+                WHERE f.md5 = ? AND f.size = ?
+                LIMIT 1
+            """, (md5, size))
+
+        (file_id, dup_id), = res if res else ((None, None), )
+
+        # Freshly detected duplicate, insert new row in "duplicates"
+        if file_id and (not dup_id) :
+            self._execute("""--sql
+                    INSERT INTO duplicates (type) VALUES ("file")
+                """)
+
+            dup_id = self._lastRowID()
+
+            self._execute("""--sql
+                UPDATE files
+                SET duplicate_id = ?
+                WHERE id = ?
+            """, (dup_id, file_id))
+
+        self._execute("""--sql
+                INSERT INTO files (path, size , md5, duplicate_id) VALUES (?, ?, ?, ?)
+            """, (path, size, md5, dup_id))
+
 
 def main():
     db = Database(':memory:')
@@ -80,21 +111,17 @@ def main():
     db._executeMany("""--sql
         INSERT INTO files (path, size , md5) VALUES (?, ?, ?)
     """, (
-        ("path/a/b", 123, "121212wdqadwe"),
-        ("path/a/c", 124, "121212wdqadwe1212")
+        ("path/a/b", 100, "md51"),
+        ("path/a/b", 100, "md52"),
+        ("path/a/c", 200, "md53")
     ))
 
     db._executeMany("""--sql
         INSERT INTO dirs (path, md5) VALUES (?, ?)
     """, (
-        ("path/a/c", "121212wdqa"),
-        ("path/a/b", "121212wdqadwe1212")
+        ("path/a/c", "md51"),
+        ("path/a/b", "md51")
     ))
-
-    db._execute("""--sql
-        INSERT INTO duplicates (type) VALUES (?);
-    """,
-    ("file",))
 
     db.commit()
 
@@ -102,18 +129,18 @@ def main():
     db.dumpTable("dirs")
     db.dumpTable("duplicates")
 
-    db._execute("""--sql
-        UPDATE files
-        SET duplicate_id = (
-            SELECT id
-            FROM duplicates AS d
-            WHERE d.id = 1
-        )
-        WHERE id = 1 OR id = 2;
-    """)
+    print("--- Mock data created ---")
+
+    db.insertFile("path/a/d", 100, "md54")
+    db.insertFile("path/a/d", 100, "md52")
+    db.insertFile("path/a/d", 200, "md52")
+    db.insertFile("path/a/d", 200, "md55")
+    db.insertFile("path/a/e", 100, "md52")
+    db.insertFile("path/a/e", 100, "md54")
 
     db.commit()
     db.dumpTable("files")
+    db.dumpTable("duplicates")
 
 if __name__ == "__main__":
     main()
