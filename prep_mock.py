@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 import shutil
 
-from file_ops import cd
+from fs_ops import cd
 
 
 class UnexpactedFileTree(Exception):

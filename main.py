@@ -5,7 +5,7 @@ from contextlib import contextmanager
 import hashlib
 
 
-from file_ops import cd
+from fs_ops import cd
 import prep_mock
 
 
