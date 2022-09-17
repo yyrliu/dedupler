@@ -6,6 +6,7 @@ import hashlib
 
 
 from fs_ops import cd
+from db import Database as DB
 import prep_mock
 
 
@@ -29,8 +30,6 @@ def dir_dfs(path):
 
 def file_handler(path):
     size = path.stat().st_size
-    name = path.name
-    suffix = path.suffix
 
     with open(path, 'rb') as f:
         if size < 1024:
@@ -38,9 +37,9 @@ def file_handler(path):
         else:
             chunk = f.read(1024)
 
-    hash = (path, size, hashlib.md5(chunk).hexdigest())
-
-    return hash
+    hash = hashlib.md5(chunk).hexdigest()
+    
+    db.insertFile(str(path), size, hash) 
 
 def dir_handler(path, stack=[]):
     '''Use default parameter values as stack for saving directory states'''
@@ -64,11 +63,18 @@ def switcher(type, *args):
 
 def file_scanner(path):
     for type, p in dir_dfs(path):
-        print(switcher(type, p))
+        switcher(type, p)
 
 def main():
+    global db
+    db = DB(':memory:')
+    db.initialize()
+
     file_scanner("./test/mock_data")
 
+    db.commit()
+    db.dumpTable("files")
+    db.dumpTable("duplicates")
 
 if __name__ == "__main__":
     prep_mock.create_mock_data("./test/mock_data_file_tree.json", "./test/mock_data")
