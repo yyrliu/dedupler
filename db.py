@@ -11,8 +11,6 @@ class PartialHashCollisionException(Exception):
 
 class Database():
 
-    # TODO: use short-circuit operator "return x or y" to replace "return x if x else y"
-
     def __init__(self, db_path):
         self.conn = sqlite3.connect(db_path)
         self.curs = self.conn.cursor()
@@ -20,12 +18,12 @@ class Database():
     def _sqlExecute(self, *args):
         self.curs.execute(*args)
         res = self.curs.fetchall()
-        return res if res else None
+        return res or None
 
     def _sqlExecuteMany(self, *args):
         self.curs.executemany(*args)
         res = self.curs.fetchall()
-        return res if res else None
+        return res or None
 
     def _sqlExecuteScript(self, script):
         self.curs.executescript(script)
