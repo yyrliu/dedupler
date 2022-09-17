@@ -6,7 +6,7 @@ import hashlib
 
 
 from fs_ops import cd
-from db import Database as DB
+import db as DB
 import prep_mock
 
 
@@ -28,6 +28,16 @@ def dir_dfs(path):
             yield from dir_dfs(p)
             yield ('dir', None)
 
+def full_hash_by_chucks(path, block_size=2**20):
+    md5 = hashlib.md5()
+    with open(path, 'rb') as f:
+        while True:
+            chunk = f.read(block_size)
+            if not chunk:
+                break
+            md5.update(chunk)
+    return md5.hexdigest()
+
 def file_handler(path):
     size = path.stat().st_size
 
@@ -38,8 +48,18 @@ def file_handler(path):
             chunk = f.read(1024)
 
     hash = hashlib.md5(chunk).hexdigest()
-    
-    db.insertFile(str(path), size, hash) 
+
+    try:
+        db.insertFile(str(path), size, hash)
+    # Catch exception if identical partial hash exists
+    except DB.PartialHashCollisionException as e:
+        # Add complete hash to collided file if not exists
+        if not e.has_md5_complete:
+            e_full_hash = full_hash_by_chucks(e.path)
+            db.updateFileCompleteHash(e.id, e_full_hash)
+        # Resummit insertion request
+        full_hash = full_hash_by_chucks(path)
+        db.insertFile(str(path), size, hash, full_hash)
 
 def dir_handler(path, stack=[]):
     '''Use default parameter values as stack for saving directory states'''
@@ -67,7 +87,7 @@ def file_scanner(path):
 
 def main():
     global db
-    db = DB(':memory:')
+    db = DB.Database(':memory:')
     db.initialize()
 
     file_scanner("./test/mock_data")

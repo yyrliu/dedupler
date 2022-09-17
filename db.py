@@ -1,7 +1,17 @@
 import sqlite3
 import pandas as pd
 
+class PartialHashCollisionException(Exception):
+    def __init__(self, message, id, path, has_md5_complete):            
+        # Call the base class constructor with the parameters it needs
+        super().__init__(message)
+        self.id = id
+        self.path = path
+        self.has_md5_complete = has_md5_complete
+
 class Database():
+
+    # TODO: use short-circuit operator "return x or y" to replace "return x if x else y"
 
     def __init__(self, db_path):
         self.conn = sqlite3.connect(db_path)
@@ -39,6 +49,12 @@ class Database():
             DROP TABLE IF EXISTS duplicates;
         """)
 
+    def _sqlInsertDuplicate(self, type):
+        self._sqlExecute("""--sql
+                INSERT INTO duplicates (type) VALUES (?)
+            """, (type, ))
+        return self._lastRowID()
+
     def initialize(self):
         self._dropAll()
         self._sqlExecuteScript("""--sql
@@ -54,7 +70,7 @@ class Database():
                 path TEXT NOT NULL,
                 size INTEGER NOT NULL,
                 md5 TEXT NOT NULL,
-                md5_complete TEXT UNIQUE,
+                md5_complete TEXT,
                 duplicate_id INTEGER,
                 FOREIGN KEY(duplicate_id) REFERENCES duplicates(id)
             );
@@ -83,23 +99,43 @@ class Database():
         print(pd.read_sql_query(f"SELECT * FROM {table}", self.conn))
         print("\n----- " + f'End of table "{table}"' " -----\n" )
 
-    def insertFile(self, path, size, md5):
-        res = self._sqlGetFirst("""--sql
-                SELECT id, duplicate_id
+    def insertFile(self, path, size, md5, md5_complete=None):
+        # If file size < 1024, md5_complete will be set to the same value as md5
+        if size < 1024:
+            md5_complete = md5
+
+        # For file bigger than 1024, first scan (partial hash)
+        if not md5_complete:
+            res = self._sqlGetFirst("""--sql
+                SELECT id, path, md5_complete
                 FROM files AS f
                 WHERE f.md5 = ? AND f.size = ?
                 LIMIT 1
             """, (md5, size))
 
-        file_id, dup_id = res if res else (None, None)
+            # If there is a match, throw exception to request a full hash
+            if res:
+                res_id, res_path, res_has_md5_complete = res
+                raise PartialHashCollisionException(f'Partial hash collision detected! Please do full file hash on "{res_path}".', res_id, res_path, bool(res_has_md5_complete))
+
+            # Insert file if no match is found
+            else:
+                return self._sqlInsertFile(path, size, md5)
+
+        # For file smaller than 1024, first scan (partial hash) or file bigger than 1024, second scan (full hash)
+        res = self._sqlGetFirst("""--sql
+                SELECT id, duplicate_id
+                FROM files AS f
+                WHERE f.md5_complete = ? AND f.size = ?
+                LIMIT 1
+            """, (md5_complete, size))
+
+        file_id, dup_id = res or (None, None)
 
         # Freshly detected duplicate, insert new row in "duplicates"
+        # TODO: Add md5_complete column to duplicates
         if file_id and (not dup_id) :
-            self._sqlExecute("""--sql
-                    INSERT INTO duplicates (type) VALUES ("file")
-                """)
-
-            dup_id = self._lastRowID()
+            dup_id = self._sqlInsertDuplicate("file")
 
             self._sqlExecute("""--sql
                 UPDATE files
@@ -107,7 +143,12 @@ class Database():
                 WHERE id = ?
             """, (dup_id, file_id))
 
-        self._sqlInsertFile(path, size, md5, None ,dup_id)
+        self._sqlInsertFile(path, size, md5, md5_complete, dup_id)
+
+    def updateFileCompleteHash(self, id, md5_complete):
+        self._sqlExecute("""--sql
+                UPDATE files SET md5_complete=? WHERE id=?
+            """, (md5_complete, id))
 
 def main():
     db = Database(':memory:')
