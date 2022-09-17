@@ -7,24 +7,33 @@ class Database():
         self.conn = sqlite3.connect(db_path)
         self.curs = self.conn.cursor()
 
-    def _execute(self, *args):
+    def _sqlExecute(self, *args):
         self.curs.execute(*args)
         res = self.curs.fetchall()
         return res if res else None
 
-    def _executeMany(self, *args):
+    def _sqlExecuteMany(self, *args):
         self.curs.executemany(*args)
         res = self.curs.fetchall()
         return res if res else None
 
-    def _executeScript(self, script):
+    def _sqlExecuteScript(self, script):
         self.curs.executescript(script)
+
+    def _sqlGetFirst(self, *args):
+        res = self._sqlExecute(*args)
+        return res[0] if res else None
+
+    def _sqlInsertFile(self, path, size, md5, md5_complete=None, dup_id=None):
+        self._sqlExecute("""--sql
+                INSERT INTO files (path, size, md5, md5_complete, duplicate_id) VALUES (?, ?, ?, ?, ?)
+            """, (path, size, md5, md5_complete, dup_id))
 
     def _lastRowID(self):
         return self.curs.lastrowid
 
     def _dropAll(self):
-        self._executeScript("""--sql
+        self._sqlExecuteScript("""--sql
             DROP TABLE IF EXISTS files;
             DROP TABLE IF EXISTS dirs;
             DROP TABLE IF EXISTS duplicates;
@@ -32,7 +41,7 @@ class Database():
 
     def initialize(self):
         self._dropAll()
-        self._executeScript("""--sql
+        self._sqlExecuteScript("""--sql
             PRAGMA foreign_keys = ON;
 
             CREATE TABLE duplicates (
@@ -75,40 +84,37 @@ class Database():
         print("\n----- " + f'End of table "{table}"' " -----\n" )
 
     def insertFile(self, path, size, md5):
-        res = self._execute("""--sql
+        res = self._sqlGetFirst("""--sql
                 SELECT id, duplicate_id
                 FROM files AS f
                 WHERE f.md5 = ? AND f.size = ?
                 LIMIT 1
             """, (md5, size))
 
-        (file_id, dup_id), = res if res else ((None, None), )
+        file_id, dup_id = res if res else (None, None)
 
         # Freshly detected duplicate, insert new row in "duplicates"
         if file_id and (not dup_id) :
-            self._execute("""--sql
+            self._sqlExecute("""--sql
                     INSERT INTO duplicates (type) VALUES ("file")
                 """)
 
             dup_id = self._lastRowID()
 
-            self._execute("""--sql
+            self._sqlExecute("""--sql
                 UPDATE files
                 SET duplicate_id = ?
                 WHERE id = ?
             """, (dup_id, file_id))
 
-        self._execute("""--sql
-                INSERT INTO files (path, size , md5, duplicate_id) VALUES (?, ?, ?, ?)
-            """, (path, size, md5, dup_id))
-
+        self._sqlInsertFile(path, size, md5, None ,dup_id)
 
 def main():
     db = Database(':memory:')
 
     db.initialize()
 
-    db._executeMany("""--sql
+    db._sqlExecuteMany("""--sql
         INSERT INTO files (path, size , md5) VALUES (?, ?, ?)
     """, (
         ("path/a/b", 100, "md51"),
@@ -116,7 +122,7 @@ def main():
         ("path/a/c", 200, "md53")
     ))
 
-    db._executeMany("""--sql
+    db._sqlExecuteMany("""--sql
         INSERT INTO dirs (path, md5) VALUES (?, ?)
     """, (
         ("path/a/c", "md51"),
