@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from contextlib import contextmanager
 import hashlib
+from wand.image import Image
 
 
 from fs_ops import cd
@@ -38,28 +39,36 @@ def full_hash_by_chucks(path, block_size=2**20):
             md5.update(chunk)
     return md5.hexdigest()
 
+img_extensions = ['.jpg', '.png', '.gif', '.tiff', '.jpeg']
+
 def file_handler(path):
     size = path.stat().st_size
 
-    with open(path, 'rb') as f:
-        if size < 1024:
-            chunk = f.read()
-        else:
-            chunk = f.read(1024)
+    if path.suffix in img_extensions:
+        with Image(filename=path) as img:
+            sha256 = img.signature
+            db.insertFile(str(path), size, sha256, sha256)
 
-    hash = hashlib.md5(chunk).hexdigest()
+    else:
+        with open(path, 'rb') as f:
+            if size < 1024:
+                chunk = f.read()
+            else:
+                chunk = f.read(1024)
 
-    try:
-        db.insertFile(str(path), size, hash)
-    # Catch exception if identical partial hash exists
-    except DB.PartialHashCollisionException as e:
-        # Add complete hash to collided file if not exists
-        if not e.has_md5_complete:
-            e_full_hash = full_hash_by_chucks(e.path)
-            db.updateFileCompleteHash(e.id, e_full_hash)
-        # Resummit insertion request
-        full_hash = full_hash_by_chucks(path)
-        db.insertFile(str(path), size, hash, full_hash)
+        hash = hashlib.md5(chunk).hexdigest()
+
+        try:
+            db.insertFile(str(path), size, hash)
+        # Catch exception if identical partial hash exists
+        except DB.PartialHashCollisionException as e:
+            # Add complete hash to collided file if not exists
+            if not e.has_md5_complete:
+                e_full_hash = full_hash_by_chucks(e.path)
+                db.updateFileCompleteHash(e.id, e_full_hash)
+            # Resummit insertion request
+            full_hash = full_hash_by_chucks(path)
+            db.insertFile(str(path), size, hash, full_hash)
 
 def dir_handler(path, stack=[]):
     '''Use default parameter values as stack for saving directory states'''

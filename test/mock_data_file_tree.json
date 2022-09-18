@@ -8,6 +8,10 @@
             { "name": "dup_test2", "content": "dup_text_test2" },
             { "name": "dup_test3", "content": "dup_text_test3" }
         ],
+        ".jpg": [
+            { "name": "sydney", "url": "https://i.stack.imgur.com/7bI1Y.jpg" },
+            { "name": "sydney2", "url": "https://i.stack.imgur.com/XZ4V5.jpg" }
+        ],
         "f2":{
             ".txt": [
                 { "name": "test2", "content": "folder1_f2_text_test2" }
@@ -21,6 +25,9 @@
             { "name": "dup_test1", "content": "dup_text_test1" },
             { "name": "dup_test2", "content": "dup_text_test2" },
             { "name": "dup_test3", "content": "dup_text_test3" }
+        ],
+        ".jpg": [
+            { "name": "sydney", "url": "https://i.stack.imgur.com/7bI1Y.jpg" }
         ]
     }
 }

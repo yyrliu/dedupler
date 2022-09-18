@@ -2,12 +2,12 @@ import sqlite3
 import pandas as pd
 
 class PartialHashCollisionException(Exception):
-    def __init__(self, message, id, path, has_md5_complete):            
+    def __init__(self, message, id, path, has_hash_complete):            
         # Call the base class constructor with the parameters it needs
         super().__init__(message)
         self.id = id
         self.path = path
-        self.has_md5_complete = has_md5_complete
+        self.has_hash_complete = has_hash_complete
 
 class Database():
 
@@ -32,10 +32,10 @@ class Database():
         res = self._sqlExecute(*args)
         return res[0] if res else None
 
-    def _sqlInsertFile(self, path, size, md5, md5_complete=None, dup_id=None):
+    def _sqlInsertFile(self, path, size, hash, hash_complete=None, dup_id=None):
         self._sqlExecute("""--sql
-                INSERT INTO files (path, size, md5, md5_complete, duplicate_id) VALUES (?, ?, ?, ?, ?)
-            """, (path, size, md5, md5_complete, dup_id))
+                INSERT INTO files (path, size, hash, hash_complete, duplicate_id) VALUES (?, ?, ?, ?, ?)
+            """, (path, size, hash, hash_complete, dup_id))
 
     def _lastRowID(self):
         return self.curs.lastrowid
@@ -67,8 +67,8 @@ class Database():
                 id INTEGER PRIMARY KEY,
                 path TEXT NOT NULL,
                 size INTEGER NOT NULL,
-                md5 TEXT NOT NULL,
-                md5_complete TEXT,
+                hash TEXT NOT NULL,
+                hash_complete TEXT,
                 duplicate_id INTEGER,
                 FOREIGN KEY(duplicate_id) REFERENCES duplicates(id)
             );
@@ -76,14 +76,14 @@ class Database():
             CREATE TABLE dirs (
                 id INTEGER PRIMARY KEY,
                 path TEXT NOT NULL,
-                md5 TEXT NOT NULL,
+                hash TEXT NOT NULL,
                 duplicate_id INTEGER,
                 FOREIGN KEY(duplicate_id) REFERENCES duplicates(id)
             );
 
-            CREATE INDEX idx_files_md5 ON files (md5);
+            CREATE INDEX idx_files_hash ON files (hash);
             CREATE INDEX idx_files_duplicate_id ON files (duplicate_id);
-            CREATE INDEX idx_dirs_md5 ON dirs (md5);
+            CREATE INDEX idx_dirs_hash ON dirs (hash);
             CREATE INDEX idx_dirs_duplicate_id ON dirs (duplicate_id);
         """)
         
@@ -97,41 +97,41 @@ class Database():
         print(pd.read_sql_query(f"SELECT * FROM {table}", self.conn))
         print("\n----- " + f'End of table "{table}"' " -----\n" )
 
-    def insertFile(self, path, size, md5, md5_complete=None):
-        # If file size < 1024, md5_complete will be set to the same value as md5
+    def insertFile(self, path, size, hash, hash_complete=None):
+        # If file size < 1024, hash_complete will be set to the same value as hash
         if size < 1024:
-            md5_complete = md5
+            hash_complete = hash
 
         # For file bigger than 1024, first scan (partial hash)
-        if not md5_complete:
+        if not hash_complete:
             res = self._sqlGetFirst("""--sql
-                SELECT id, path, md5_complete
+                SELECT id, path, hash_complete
                 FROM files AS f
-                WHERE f.md5 = ? AND f.size = ?
+                WHERE f.hash = ? AND f.size = ?
                 LIMIT 1
-            """, (md5, size))
+            """, (hash, size))
 
             # If there is a match, throw exception to request a full hash
             if res:
-                res_id, res_path, res_has_md5_complete = res
-                raise PartialHashCollisionException(f'Partial hash collision detected! Please do full file hash on "{res_path}".', res_id, res_path, bool(res_has_md5_complete))
+                res_id, res_path, res_has_hash_complete = res
+                raise PartialHashCollisionException(f'Partial hash collision detected! Please do full file hash on "{res_path}".', res_id, res_path, bool(res_has_hash_complete))
 
             # Insert file if no match is found
             else:
-                return self._sqlInsertFile(path, size, md5)
+                return self._sqlInsertFile(path, size, hash)
 
         # For file smaller than 1024, first scan (partial hash) or file bigger than 1024, second scan (full hash)
         res = self._sqlGetFirst("""--sql
                 SELECT id, duplicate_id
                 FROM files AS f
-                WHERE f.md5_complete = ? AND f.size = ?
+                WHERE f.hash_complete = ? AND f.size = ?
                 LIMIT 1
-            """, (md5_complete, size))
+            """, (hash_complete, size))
 
         file_id, dup_id = res or (None, None)
 
         # Freshly detected duplicate, insert new row in "duplicates"
-        # TODO: Add md5_complete column to duplicates
+        # TODO: Add hash_complete column to duplicates
         if file_id and (not dup_id) :
             dup_id = self._sqlInsertDuplicate("file")
 
@@ -141,12 +141,12 @@ class Database():
                 WHERE id = ?
             """, (dup_id, file_id))
 
-        self._sqlInsertFile(path, size, md5, md5_complete, dup_id)
+        self._sqlInsertFile(path, size, hash, hash_complete, dup_id)
 
-    def updateFileCompleteHash(self, id, md5_complete):
+    def updateFileCompleteHash(self, id, hash_complete):
         self._sqlExecute("""--sql
-                UPDATE files SET md5_complete=? WHERE id=?
-            """, (md5_complete, id))
+                UPDATE files SET hash_complete=? WHERE id=?
+            """, (hash_complete, id))
 
 def main():
     db = Database(':memory:')
@@ -154,18 +154,18 @@ def main():
     db.initialize()
 
     db._sqlExecuteMany("""--sql
-        INSERT INTO files (path, size , md5) VALUES (?, ?, ?)
+        INSERT INTO files (path, size , hash) VALUES (?, ?, ?)
     """, (
-        ("path/a/b", 100, "md51"),
-        ("path/a/b", 100, "md52"),
-        ("path/a/c", 200, "md53")
+        ("path/a/b", 100, "hash1"),
+        ("path/a/b", 100, "hash2"),
+        ("path/a/c", 200, "hash3")
     ))
 
     db._sqlExecuteMany("""--sql
-        INSERT INTO dirs (path, md5) VALUES (?, ?)
+        INSERT INTO dirs (path, hash) VALUES (?, ?)
     """, (
-        ("path/a/c", "md51"),
-        ("path/a/b", "md51")
+        ("path/a/c", "hash1"),
+        ("path/a/b", "hash1")
     ))
 
     db.commit()
@@ -176,12 +176,12 @@ def main():
 
     print("--- Mock data created ---")
 
-    db.insertFile("path/a/d", 100, "md54")
-    db.insertFile("path/a/d", 100, "md52")
-    db.insertFile("path/a/d", 200, "md52")
-    db.insertFile("path/a/d", 200, "md55")
-    db.insertFile("path/a/e", 100, "md52")
-    db.insertFile("path/a/e", 100, "md54")
+    db.insertFile("path/a/d", 100, "hash4")
+    db.insertFile("path/a/d", 100, "hash2")
+    db.insertFile("path/a/d", 200, "hash2")
+    db.insertFile("path/a/d", 200, "hash5")
+    db.insertFile("path/a/e", 100, "hash2")
+    db.insertFile("path/a/e", 100, "hash4")
 
     db.commit()
     db.dumpTable("files")

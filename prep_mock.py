@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 import shutil
+import requests
 
 from fs_ops import cd
 
@@ -26,15 +27,27 @@ def dict_dfs(tree, path=Path()):
 
         raise UnexpactedFileTree(f'In "{path}": "{k}": {v} cannot be parsed')
 
-def create_txt(file, content):
-        with open(file, 'w') as f:
-            f.write(content)
+def create_txt(file, options):
+    with open(file, 'w') as f:
+        f.write(options["content"])
+
+def create_jpg(file, options):
+    print(options)
+    data = requests.get(options["url"]).content
+    with open(file, 'wb') as f:
+        f.write(data)
 
 def parse_mock(file):
     with open(file, 'r') as f:
         file_tree = json.load(f)
 
     return dict_dfs(file_tree)
+
+def switcher(type, *args):
+    return {
+        "txt": create_txt,
+        "jpg": create_jpg
+    }[type](*args)
 
 def create_mock_data(file_tree, base_dir="./test/mock_data"):
     base_dir = Path(base_dir)
@@ -48,9 +61,7 @@ def create_mock_data(file_tree, base_dir="./test/mock_data"):
             if not path.exists():
                 path.mkdir()
             try:
-                {
-                    "txt": create_txt(path.joinpath(f"{name}.txt"), options["content"])
-                }[type]
+                switcher(type, path.joinpath(f"{name}.{type}"), options)
             except KeyError as e:
                 raise UnexpactedFileType(f'Unknown file type "{type}" in "{path.joinpath(name)}"') from e
         
