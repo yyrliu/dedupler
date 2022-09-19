@@ -9,6 +9,7 @@ class PartialHashCollisionException(Exception):
         self.path = path
         self.has_hash_complete = has_hash_complete
 
+# TODO: add index for hash_complete
 class Database():
 
     def __init__(self, db_path):
@@ -65,7 +66,7 @@ class Database():
 
             CREATE TABLE files (
                 id INTEGER PRIMARY KEY,
-                path TEXT NOT NULL,
+                path TEXT NOT NULL UNIQUE,
                 size INTEGER NOT NULL,
                 hash TEXT NOT NULL,
                 hash_complete TEXT,
@@ -75,7 +76,7 @@ class Database():
 
             CREATE TABLE dirs (
                 id INTEGER PRIMARY KEY,
-                path TEXT NOT NULL,
+                path TEXT NOT NULL UNIQUE,
                 hash TEXT NOT NULL,
                 duplicate_id INTEGER,
                 FOREIGN KEY(duplicate_id) REFERENCES duplicates(id)
@@ -147,6 +148,10 @@ class Database():
         self._sqlExecute("""--sql
                 UPDATE files SET hash_complete=? WHERE id=?
             """, (hash_complete, id))
+
+    def close(self):
+        self.curs.close()
+        self.conn.close()
 
 def main():
     db = Database(':memory:')
