@@ -1,9 +1,6 @@
-import chunk
-import os
-from pathlib import Path
-from contextlib import contextmanager
 import hashlib
 from wand.image import Image
+from pathlib import Path
 
 import fs_utlis
 import db as DB
@@ -22,6 +19,10 @@ def partial_hasher(path, size):
             chunk = f.read(1024)
     return hashlib.md5(chunk).hexdigest()
 
+def image_hasher(path):
+    with Image(filename=path) as img:
+        return img.signature
+
 def full_hasher(path, block_size=2**20):
     md5 = hashlib.md5()
     with open(path, 'rb') as f:
@@ -38,9 +39,8 @@ def file_handler(path):
     size = path.stat().st_size
 
     if path.suffix in img_extensions:
-        with Image(filename=path) as img:
-            sha256 = img.signature
-            __db__.insertFile(str(path), size, sha256, sha256)
+        image_hash = image_hasher(path)
+        __db__.insertFile(str(path), size, image_hash, image_hash)
 
     else:
         partial_hash = partial_hasher(path, size)
