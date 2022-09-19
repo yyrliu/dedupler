@@ -6,7 +6,7 @@ import hashlib
 from wand.image import Image
 
 
-from fs_ops import cd
+import fs_utlis
 import db as DB
 import test.prep_mock as prep_mock
 
@@ -14,22 +14,16 @@ import test.prep_mock as prep_mock
 class SymlinkFound(Exception):
     pass
 
-def dir_dfs(path):
-    '''Generator for all files and directories in a directory, directory path and comes before the children are iterated and "None" comes after everything.'''
 
-    for p in Path(path).iterdir():
-        if p.is_symlink():
-            yield ('symlink', p)
+def partial_hasher(path, size):
+    with open(path, 'rb') as f:
+        if size < 1024:
+            chunk = f.read()
+        else:
+            chunk = f.read(1024)
+    return hashlib.md5(chunk).hexdigest()
 
-        if p.is_file():
-            yield ('file', p)
-            
-        if p.is_dir():
-            yield ('dir', p)
-            yield from dir_dfs(p)
-            yield ('dir', None)
-
-def full_hash_by_chucks(path, block_size=2**20):
+def full_hasher(path, block_size=2**20):
     md5 = hashlib.md5()
     with open(path, 'rb') as f:
         while True:
@@ -50,25 +44,18 @@ def file_handler(path):
             db.insertFile(str(path), size, sha256, sha256)
 
     else:
-        with open(path, 'rb') as f:
-            if size < 1024:
-                chunk = f.read()
-            else:
-                chunk = f.read(1024)
-
-        hash = hashlib.md5(chunk).hexdigest()
-
+        partial_hash = partial_hasher(path, size)
         try:
-            db.insertFile(str(path), size, hash)
+            db.insertFile(str(path), size, partial_hash)
         # Catch exception if identical partial hash exists
         except DB.PartialHashCollisionException as e:
             # Add complete hash to collided file if not exists
             if not e.has_md5_complete:
-                e_full_hash = full_hash_by_chucks(e.path)
+                e_full_hash = full_hasher(e.path)
                 db.updateFileCompleteHash(e.id, e_full_hash)
             # Resummit insertion request
-            full_hash = full_hash_by_chucks(path)
-            db.insertFile(str(path), size, hash, full_hash)
+            full_hash = full_hasher(path)
+            db.insertFile(str(path), size, partial_hash, full_hash)
 
 def dir_handler(path, stack=[]):
     '''Use default parameter values as stack for saving directory states'''
@@ -91,7 +78,7 @@ def switcher(type, *args):
     }[type](*args)
 
 def file_scanner(path):
-    for type, p in dir_dfs(path):
+    for type, p in fs_utlis.dir_dfs(path):
         switcher(type, p)
 
 def main():

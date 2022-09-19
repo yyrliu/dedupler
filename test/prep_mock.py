@@ -3,8 +3,8 @@ import json
 import shutil
 import requests
 
-from fs_ops import cd
 
+import fs_utlis
 
 class UnexpactedFileTree(Exception):
     pass
@@ -56,7 +56,7 @@ def create_mock_data(file_tree, base_dir="./test/mock_data"):
     base_dir.mkdir()
 
     files = parse_mock(file_tree)
-    with cd(base_dir):
+    with fs_utlis.cd(base_dir):
         for path, type, name, options in files:
             if not path.exists():
                 path.mkdir()
