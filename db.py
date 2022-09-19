@@ -115,7 +115,12 @@ class Database():
             # If there is a match, throw exception to request a full hash
             if res:
                 res_id, res_path, res_has_hash_complete = res
-                raise PartialHashCollisionException(f'Partial hash collision detected! Please do full file hash on "{res_path}".', res_id, res_path, bool(res_has_hash_complete))
+                exception_str = (
+                    f'Partial hash collision detected! Between files:\n'
+                    f'"{res_path}",\n'
+                    f'"{path}"\n'
+                )
+                raise PartialHashCollisionException(exception_str, res_id, res_path, bool(res_has_hash_complete))
 
             # Insert file if no match is found
             else:
