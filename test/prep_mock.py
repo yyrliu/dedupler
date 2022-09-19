@@ -3,7 +3,7 @@ import json
 import shutil
 import requests
 import asyncio
-
+from faker import Faker
 
 import fs_utlis
 
@@ -53,6 +53,24 @@ def create_jpg_async(file, options, tasks=[], loop=None):
     # Normal behavior, append task to tasks[] 
     tasks.append(loop.create_task(task(file, options)))
 
+def bolb_generator(size, seed, cache={}):
+    if (size, seed) in cache:
+        blob = cache[(size, seed)]
+    else:
+        fake = Faker()
+        fake.seed_instance(seed)
+        blob = fake.binary(length=size*2**10)
+        cache[(size, seed)] = blob
+
+    return blob
+
+def create_dat(file, options):
+    with open(file, 'wb') as f:
+
+        for contents in options["options"]["contents"]:
+            blob = bolb_generator(contents["size"], contents["seed"])
+            f.write(blob)
+
 def parse_mock(file):
     with open(file, 'r') as f:
         file_tree = json.load(f)
@@ -62,7 +80,8 @@ def parse_mock(file):
 def switcher(type, *args):
     return {
         "txt": create_txt,
-        "jpg": create_jpg_async
+        "jpg": create_jpg_async,
+        "dat": create_dat
     }[type](*args)
 
 def create_mock_data(file_tree, base_dir="./test/mock_data"):

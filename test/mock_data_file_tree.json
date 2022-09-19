@@ -12,9 +12,25 @@
             { "name": "sydney", "url": "https://i.stack.imgur.com/7bI1Y.jpg" },
             { "name": "sydney2", "url": "https://i.stack.imgur.com/XZ4V5.jpg" }
         ],
+        ".dat": [
+            { "name": "512K_rand1", "options": {
+                    "method": "faker.bolb",
+                    "contents": [
+                        {"size": 10, "seed": 0},
+                        {"size": 502, "seed": 1}
+            ] } }
+        ],
         "f2":{
             ".txt": [
                 { "name": "test2", "content": "folder1_f2_text_test2" }
+            ],
+            ".dat": [
+                { "name": "512K_rand1", "options": {
+                        "method": "faker.bolb",
+                        "contents": [
+                            {"size": 10, "seed": 0},
+                            {"size": 502, "seed": 1}
+                ] } }
             ]
         }
     },
@@ -28,6 +44,20 @@
         ],
         ".jpg": [
             { "name": "sydney", "url": "https://i.stack.imgur.com/7bI1Y.jpg" }
+        ],
+        ".dat": [
+            { "name": "512K_rand2", "options": {
+                    "method": "faker.bolb",
+                    "contents": [
+                        {"size": 10, "seed": 0},
+                        {"size": 502, "seed": 2}
+            ] } },
+            { "name": "510K_rand3", "options": {
+                "method": "faker.bolb",
+                "contents": [
+                    {"size": 10, "seed": 0},
+                    {"size": 500, "seed": 2}
+        ] } }
         ]
     }
 }
