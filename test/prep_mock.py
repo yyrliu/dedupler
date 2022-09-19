@@ -2,6 +2,7 @@ from pathlib import Path
 import json
 import shutil
 import requests
+import asyncio
 
 
 import fs_utlis
@@ -31,11 +32,26 @@ def create_txt(file, options):
     with open(file, 'w') as f:
         f.write(options["content"])
 
-def create_jpg(file, options):
-    print(options)
-    data = requests.get(options["url"]).content
-    with open(file, 'wb') as f:
-        f.write(data)
+def create_jpg_async(file, options, tasks=[], loop=None):
+    """Tasks are stored in tasks[] and executed asynchronously when file parameter is None. """
+
+    # Create event loop at first run
+    if not loop:
+        loop = asyncio.get_event_loop()
+
+    # Execute event loop when file parameter is None
+    if not file:
+        loop.run_until_complete(asyncio.wait(tasks))
+        return
+    
+    async def task(file, options):
+        print(options)
+        res = await loop.run_in_executor(None, requests.get, options["url"])
+        with open(file, 'wb') as f:
+            f.write(res.content)
+
+    # Normal behavior, append task to tasks[] 
+    tasks.append(loop.create_task(task(file, options)))
 
 def parse_mock(file):
     with open(file, 'r') as f:
@@ -46,7 +62,7 @@ def parse_mock(file):
 def switcher(type, *args):
     return {
         "txt": create_txt,
-        "jpg": create_jpg
+        "jpg": create_jpg_async
     }[type](*args)
 
 def create_mock_data(file_tree, base_dir="./test/mock_data"):
@@ -64,6 +80,9 @@ def create_mock_data(file_tree, base_dir="./test/mock_data"):
                 switcher(type, path.joinpath(f"{name}.{type}"), options)
             except KeyError as e:
                 raise UnexpactedFileType(f'Unknown file type "{type}" in "{path.joinpath(name)}"') from e
+
+        # TODO: find a more elegant way to start event loop execution
+        create_jpg_async(None, None)
         
 
 def remove_mock_data(base_dir):
