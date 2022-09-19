@@ -49,7 +49,7 @@ def file_handler(path):
         # Catch exception if identical partial hash exists
         except DB.PartialHashCollisionException as e:
             # Add complete hash to collided file if not exists
-            if not e.has_md5_complete:
+            if not e.has_hash_complete:
                 e_full_hash = full_hasher(e.path)
                 __db__.updateFileCompleteHash(e.id, e_full_hash)
             # Resummit insertion request
