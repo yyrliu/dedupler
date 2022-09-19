@@ -8,7 +8,7 @@ from wand.image import Image
 
 from fs_ops import cd
 import db as DB
-import prep_mock
+import test.prep_mock as prep_mock
 
 
 class SymlinkFound(Exception):
