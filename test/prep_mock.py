@@ -78,11 +78,14 @@ def parse_mock(file):
     return dict_dfs(file_tree)
 
 def switcher(type, *args):
-    return {
-        "txt": create_txt,
-        "jpg": create_jpg_async,
-        "dat": create_dat
-    }[type](*args)
+    if type == 'txt':
+        create_txt(*args)
+    elif type == 'jpg':
+        create_jpg_async(*args)
+    elif type == 'dat':
+        create_dat(*args)
+    else:
+        raise UnexpactedFileType(f'Unknown file type "{type}" in "{args}"')
 
 def create_mock_data(file_tree, base_dir="./test/mock_data"):
     base_dir = Path(base_dir)
@@ -95,10 +98,8 @@ def create_mock_data(file_tree, base_dir="./test/mock_data"):
         for path, type, name, options in files:
             if not path.exists():
                 path.mkdir()
-            try:
-                switcher(type, path.joinpath(f"{name}.{type}"), options)
-            except KeyError as e:
-                raise UnexpactedFileType(f'Unknown file type "{type}" in "{path.joinpath(name)}"') from e
+            
+            switcher(type, path.joinpath(f"{name}.{type}"), options)
 
         # TODO: find a more elegant way to start event loop execution
         create_jpg_async(None, None)

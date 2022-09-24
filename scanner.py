@@ -11,6 +11,9 @@ __db__ = None
 class SymlinkFound(Exception):
     pass
 
+class UnexpactedPathType(Exception):
+    pass
+
 def partial_hasher(path, size):
     with open(path, 'rb') as f:
         if size < 1024:
@@ -70,11 +73,14 @@ def symlink_handler(path):
     raise SymlinkFound(f'Symlink "{path} found in directory, unable to handle it')
 
 def switcher(type, *args):
-    return {
-        'file': file_handler,
-        'dir': dir_handler,
-        'symlink': symlink_handler,
-    }[type](*args)
+    if type == 'dir':
+        dir_handler(*args)
+    elif type == 'file':
+        file_handler(*args)
+    elif type == 'symlink':
+        symlink_handler(*args)
+    else:
+        raise UnexpactedPathType
 
 def scan(path: Path, db: DB.Database):
     global __db__
