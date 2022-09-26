@@ -6,8 +6,6 @@ import fs_utlis
 import db as DB
 
 
-__db__ = None
-
 class SymlinkFound(Exception):
     pass
 
@@ -38,54 +36,62 @@ def full_hasher(path, block_size=2**20):
 
 img_extensions = ['.jpg', '.png', '.gif', '.tiff', '.jpeg']
 
-def file_handler(path):
-    size = path.stat().st_size
+class Scanner():
+    def __init__(self, db_path):
+        self.db = DB.Database(db_path)
+        self.db.initialize()
 
-    if path.suffix in img_extensions:
-        image_hash = image_hasher(path)
-        __db__.insertFile(str(path), size, image_hash, image_hash)
+    def file_handler(self, path):
+        size = path.stat().st_size
 
-    else:
-        partial_hash = partial_hasher(path, size)
-        try:
-            __db__.insertFile(str(path), size, partial_hash)
-        # Catch exception if identical partial hash exists
-        except DB.PartialHashCollisionException as e:
-            # Add complete hash to collided file if not exists
-            if not e.has_hash_complete:
-                e_full_hash = full_hasher(e.path)
-                __db__.updateFileCompleteHash(e.id, e_full_hash)
-            # Resummit insertion request
-            full_hash = full_hasher(path)
-            __db__.insertFile(str(path), size, partial_hash, full_hash)
+        if path.suffix in img_extensions:
+            image_hash = image_hasher(path)
+            self.db.insertFile(str(path), size, image_hash, image_hash)
 
-def dir_handler(path, stack=[]):
-    '''Use default parameter values as stack for saving directory states'''
+        else:
+            partial_hash = partial_hasher(path, size)
+            try:
+                self.db.insertFile(str(path), size, partial_hash)
+            # Catch exception if identical partial hash exists
+            except DB.PartialHashCollisionException as e:
+                # Add complete hash to collided file if not exists
+                if not e.has_hash_complete:
+                    e_full_hash = full_hasher(e.path)
+                    self.db.updateFileCompleteHash(e.id, e_full_hash)
+                # Resummit insertion request
+                full_hash = full_hasher(path)
+                self.db.insertFile(str(path), size, partial_hash, full_hash)
 
-    if path is None:
-        path = stack.pop()  
-        return f'<--- "{path}" ends there --->'
+    def dir_handler(self, path, stack=[]):
+        '''Use default parameter values as stack for saving directory states'''
 
-    stack.append(path)
-    return f'<-- "{path}" starts from there --->'
+        if path is None:
+            path = stack.pop()  
+            return f'<--- "{path}" ends there --->'
 
-def symlink_handler(path):
-    raise SymlinkFound(f'Symlink "{path} found in directory, unable to handle it')
+        stack.append(path)
+        return f'<-- "{path}" starts from there --->'
 
-def switcher(type, *args):
-    if type == 'dir':
-        dir_handler(*args)
-    elif type == 'file':
-        file_handler(*args)
-    elif type == 'symlink':
-        symlink_handler(*args)
-    else:
-        raise UnexpactedPathType
+    @staticmethod
+    def symlink_handler(path):
+        raise SymlinkFound(f'Symlink "{path} found in directory, unable to handle it')
 
-def scan(path: Path, db: DB.Database):
-    global __db__
-    if __db__ is None:
-        __db__ = db
-    for type, p in fs_utlis.dir_dfs(path):
-        switcher(type, p)
-        __db__.commit()
+    def switcher(self, type, *args):
+        if type == 'dir':
+            self.dir_handler(*args)
+        elif type == 'file':
+            self.file_handler(*args)
+        elif type == 'symlink':
+            Scanner.symlink_handler(*args)
+        else:
+            raise UnexpactedPathType
+
+    def scan(self, path: Path):
+        for type, p in fs_utlis.dir_dfs(path):
+            self.switcher(type, p)
+        
+        self.db.commit()
+
+    def dumpResults(self):
+        self.db.dumpTable("files")
+        self.db.dumpTable("duplicates")
