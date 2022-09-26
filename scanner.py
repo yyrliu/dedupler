@@ -40,37 +40,60 @@ class Scanner():
     def __init__(self, db_path):
         self.db = DB.Database(db_path)
         self.db.initialize()
+        self.dir_stack =[]
+
+    @property
+    def current_dir_id(self):
+        try:
+            id, _ = self.dir_stack[-1]
+        except IndexError:
+            id = self.db.rootDirID
+
+        return id
 
     def file_handler(self, path):
         size = path.stat().st_size
 
         if path.suffix in img_extensions:
             image_hash = image_hasher(path)
-            self.db.insertFile(str(path), size, image_hash, image_hash)
+            self.db.insertFile(str(path), size, self.current_dir_id, image_hash, image_hash)
 
         else:
             partial_hash = partial_hasher(path, size)
             try:
-                self.db.insertFile(str(path), size, partial_hash)
+                self.db.insertFile(str(path), size, self.current_dir_id, partial_hash)
             # Catch exception if identical partial hash exists
             except DB.PartialHashCollisionException as e:
                 # Add complete hash to collided file if not exists
                 if not e.has_hash_complete:
                     e_full_hash = full_hasher(e.path)
                     self.db.updateFileCompleteHash(e.id, e_full_hash)
+                    self.dir_hash_update(e.dir_id)
+
                 # Resummit insertion request
                 full_hash = full_hasher(path)
-                self.db.insertFile(str(path), size, partial_hash, full_hash)
+                self.db.insertFile(str(path), size, self.current_dir_id, partial_hash, full_hash)
 
-    def dir_handler(self, path, stack=[]):
-        '''Use default parameter values as stack for saving directory states'''
-
+    def dir_handler(self, path):
         if path is None:
-            path = stack.pop()  
-            return f'<--- "{path}" ends there --->'
+            id, path = self.dir_stack.pop()
+            self.dir_hash_update(id)
+            
+        else:
+            id = self.db.insertDir(str(path), self.current_dir_id)
+            self.dir_stack.append((id, path))
 
-        stack.append(path)
-        return f'<-- "{path}" starts from there --->'
+    def dir_hasher(self, id):
+        hashes = self.db.getChildrenHashes(id)
+        hash_str = "\n".join(hashes)
+        return hashlib.md5(hash_str.encode("ascii")).hexdigest()
+
+    def dir_hash_update(self, id):
+        if id != self.db.rootDirID:
+            dir_hash = self.dir_hasher(id)
+            self.db.updateDirHash(id, dir_hash)
+            parent = self.db.getDirParentID(id)
+            self.dir_hash_update(parent)
 
     @staticmethod
     def symlink_handler(path):
@@ -93,5 +116,6 @@ class Scanner():
         self.db.commit()
 
     def dumpResults(self):
+        self.db.dumpTable("dirs")
         self.db.dumpTable("files")
         self.db.dumpTable("duplicates")

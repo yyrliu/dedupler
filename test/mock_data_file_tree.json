@@ -59,5 +59,18 @@
                     {"size": 500, "seed": 2}
         ] } }
         ]
+    },
+    "f3":{
+        ".txt": [
+            { "name": "test2", "content": "folder1_f2_text_test2" }
+        ],
+        ".dat": [
+            { "name": "512K_rand1", "options": {
+                    "method": "faker.bolb",
+                    "contents": [
+                        {"size": 10, "seed": 0},
+                        {"size": 502, "seed": 1}
+            ] } }
+        ]
     }
 }
