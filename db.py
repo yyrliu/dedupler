@@ -9,7 +9,6 @@ class PartialHashCollisionException(Exception):
         self.path = path
         self.has_hash_complete = has_hash_complete
 
-# TODO: add index for hash_complete
 class Database():
 
     def __init__(self, db_path):
@@ -33,10 +32,15 @@ class Database():
         res = self._sqlExecute(*args)
         return res[0] if res else None
 
-    def _sqlInsertFile(self, path, size, hash, hash_complete=None, dup_id=None):
+    def _sqlInsertDir(self, path):
         self._sqlExecute("""--sql
-                INSERT INTO files (path, size, hash, hash_complete, duplicate_id) VALUES (?, ?, ?, ?, ?)
-            """, (path, size, hash, hash_complete, dup_id))
+                INSERT INTO dirs (path) VALUES (?)
+            """, (path,))
+
+    def _sqlInsertFile(self, path, size, dir_id, hash, hash_complete=None, dup_id=None):
+        self._sqlExecute("""--sql
+                INSERT INTO files (path, size, dir_id, hash, hash_complete, duplicate_id) VALUES (?, ?, ?, ?, ?, ?)
+            """, (path, size, dir_id, hash, hash_complete, dup_id))
 
     def _lastRowID(self):
         return self.curs.lastrowid
@@ -68,22 +72,26 @@ class Database():
                 id INTEGER PRIMARY KEY,
                 path TEXT NOT NULL UNIQUE,
                 size INTEGER NOT NULL,
+                dir_id INTEGER NOT NULL,
                 hash TEXT NOT NULL,
                 hash_complete TEXT,
                 duplicate_id INTEGER,
-                FOREIGN KEY(duplicate_id) REFERENCES duplicates(id)
+                FOREIGN KEY(duplicate_id) REFERENCES duplicates(id),
+                FOREIGN KEY(dir_id) REFERENCES dirs(id)
             );
 
             CREATE TABLE dirs (
                 id INTEGER PRIMARY KEY,
                 path TEXT NOT NULL UNIQUE,
-                hash TEXT NOT NULL,
+                hash TEXT,
                 duplicate_id INTEGER,
                 FOREIGN KEY(duplicate_id) REFERENCES duplicates(id)
             );
 
+            CREATE INDEX idx_files_dir_id ON files (dir_id);
             CREATE INDEX idx_files_hash ON files (hash);
             CREATE INDEX idx_files_duplicate_id ON files (duplicate_id);
+            CREATE INDEX idx_files_hash_complete ON files (hash_complete);
             CREATE INDEX idx_dirs_hash ON dirs (hash);
             CREATE INDEX idx_dirs_duplicate_id ON dirs (duplicate_id);
         """)
@@ -98,7 +106,11 @@ class Database():
         print(pd.read_sql_query(f"SELECT * FROM {table}", self.conn))
         print("\n----- " + f'End of table "{table}"' " -----\n" )
 
-    def insertFile(self, path, size, hash, hash_complete=None):
+    def insertDir(self, path):
+        self._sqlInsertDir(path)
+        return self._lastRowID()
+
+    def insertFile(self, path, size, dir_id, hash, hash_complete=None):
         # If file size < 1024, hash_complete will be set to the same value as hash
         if size < 1024:
             hash_complete = hash
@@ -124,7 +136,7 @@ class Database():
 
             # Insert file if no match is found
             else:
-                return self._sqlInsertFile(path, size, hash)
+                return self._sqlInsertFile(path, size, dir_id, hash)
 
         # For file smaller than 1024, first scan (partial hash) or file bigger than 1024, second scan (full hash)
         res = self._sqlGetFirst("""--sql
@@ -147,7 +159,7 @@ class Database():
                 WHERE id = ?
             """, (dup_id, file_id))
 
-        self._sqlInsertFile(path, size, hash, hash_complete, dup_id)
+        self._sqlInsertFile(path, size, dir_id, hash, hash_complete, dup_id)
 
     def updateFileCompleteHash(self, id, hash_complete):
         self._sqlExecute("""--sql
