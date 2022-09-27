@@ -1,5 +1,6 @@
 import hashlib
 from pathlib import Path
+from typing import NoReturn
 
 import fs_utlis
 import db as DB
@@ -9,19 +10,19 @@ import hashers
 class SymlinkFound(Exception):
     pass
 
-class UnexpactedPathType(Exception):
+class UnexpectedPathType(Exception):
     pass
 
 img_extensions = ('.jpg', '.png', '.gif', '.tiff', '.jpeg')
 
 class Scanner():
-    def __init__(self, db_path):
+    def __init__(self, db_path: Path | str) -> None:
         self.db = DB.Database(db_path)
         self.db.initialize()
         self.dir_stack =[]
 
     @property
-    def current_dir_id(self):
+    def current_dir_id(self) -> int:
         try:
             id, _ = self.dir_stack[-1]
         except IndexError:
@@ -29,7 +30,7 @@ class Scanner():
 
         return id
 
-    def file_handler(self, path):
+    def file_handler(self, path: Path) -> None:
         size = path.stat().st_size
 
         if path.suffix in img_extensions:
@@ -52,7 +53,7 @@ class Scanner():
                 full_hash = hashers.full_hasher(path)
                 self.db.insertFile(str(path), size, self.current_dir_id, partial_hash, full_hash)
 
-    def dir_handler(self, path):
+    def dir_handler(self, path: Path) -> None:
         if path is None:
             id, path = self.dir_stack.pop()
             self.dir_hash_update(id)
@@ -61,12 +62,12 @@ class Scanner():
             id = self.db.insertDir(str(path), self.current_dir_id)
             self.dir_stack.append((id, path))
 
-    def dir_hasher(self, id):
+    def dir_hasher(self, id: int) -> str:
         hashes = self.db.getChildrenHashes(id)
         hash_str = "\n".join(hashes)
         return hashlib.md5(hash_str.encode("ascii")).hexdigest()
 
-    def dir_hash_update(self, id):
+    def dir_hash_update(self, id: int) -> None:
         if id != self.db.rootDirID:
             dir_hash = self.dir_hasher(id)
             self.db.updateDirHash(id, dir_hash)
@@ -74,10 +75,10 @@ class Scanner():
             self.dir_hash_update(parent)
 
     @staticmethod
-    def symlink_handler(path):
+    def symlink_handler(path: Path) -> NoReturn:
         raise SymlinkFound(f'Symlink "{path} found in directory, unable to handle it')
 
-    def switcher(self, type, *args):
+    def switcher(self, type, *args) -> None:
         if type == 'dir':
             self.dir_handler(*args)
         elif type == 'file':
@@ -85,15 +86,15 @@ class Scanner():
         elif type == 'symlink':
             Scanner.symlink_handler(*args)
         else:
-            raise UnexpactedPathType
+            raise UnexpectedPathType
 
-    def scan(self, path: Path):
+    def scan(self, path: Path) -> None:
         for type, p in fs_utlis.dir_dfs(path):
             self.switcher(type, p)
         
         self.db.commit()
 
-    def dumpResults(self):
+    def dumpResults(self) -> None:
         self.db.dumpTable("dirs")
         self.db.dumpTable("files")
         self.db.dumpTable("duplicates")
