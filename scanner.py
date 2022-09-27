@@ -1,9 +1,9 @@
 import hashlib
-from wand.image import Image
 from pathlib import Path
 
 import fs_utlis
 import db as DB
+import hashers
 
 
 class SymlinkFound(Exception):
@@ -12,29 +12,7 @@ class SymlinkFound(Exception):
 class UnexpactedPathType(Exception):
     pass
 
-def partial_hasher(path, size):
-    with open(path, 'rb') as f:
-        if size < 1024:
-            chunk = f.read()
-        else:
-            chunk = f.read(1024)
-    return hashlib.md5(chunk).hexdigest()
-
-def image_hasher(path):
-    with Image(filename=path) as img:
-        return img.signature
-
-def full_hasher(path, block_size=2**20):
-    md5 = hashlib.md5()
-    with open(path, 'rb') as f:
-        while True:
-            chunk = f.read(block_size)
-            if not chunk:
-                break
-            md5.update(chunk)
-    return md5.hexdigest()
-
-img_extensions = ['.jpg', '.png', '.gif', '.tiff', '.jpeg']
+img_extensions = ('.jpg', '.png', '.gif', '.tiff', '.jpeg')
 
 class Scanner():
     def __init__(self, db_path):
@@ -55,23 +33,23 @@ class Scanner():
         size = path.stat().st_size
 
         if path.suffix in img_extensions:
-            image_hash = image_hasher(path)
+            image_hash = hashers.image_hasher(path)
             self.db.insertFile(str(path), size, self.current_dir_id, image_hash, image_hash)
 
         else:
-            partial_hash = partial_hasher(path, size)
+            partial_hash = hashers.partial_hasher(path, size)
             try:
                 self.db.insertFile(str(path), size, self.current_dir_id, partial_hash)
             # Catch exception if identical partial hash exists
             except DB.PartialHashCollisionException as e:
                 # Add complete hash to collided file if not exists
                 if not e.has_hash_complete:
-                    e_full_hash = full_hasher(e.path)
+                    e_full_hash = hashers.full_hasher(e.path)
                     self.db.updateFileCompleteHash(e.id, e_full_hash)
                     self.dir_hash_update(e.dir_id)
 
                 # Resummit insertion request
-                full_hash = full_hasher(path)
+                full_hash = hashers.full_hasher(path)
                 self.db.insertFile(str(path), size, self.current_dir_id, partial_hash, full_hash)
 
     def dir_handler(self, path):
