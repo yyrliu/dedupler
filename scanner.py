@@ -91,8 +91,6 @@ class Scanner():
     def scan(self, path: Path) -> None:
         for type, p in fs_utlis.dir_dfs(path):
             self.switcher(type, p)
-        
-        self.db.commit()
 
     def dumpResults(self) -> None:
         self.db.dumpTable("dirs")

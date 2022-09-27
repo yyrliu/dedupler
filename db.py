@@ -1,9 +1,10 @@
 import sqlite3
 from typing import Iterable
 import pandas as pd
+from contextlib import contextmanager
 
 class PartialHashCollisionException(Exception):
-    def __init__(self, message, id, path, dir_id, has_hash_complete):            
+    def __init__(self, message, id, path, dir_id, has_hash_complete):
         # Call the base class constructor with the parameters it needs
         super().__init__(message)
         self.id = id
@@ -14,8 +15,17 @@ class PartialHashCollisionException(Exception):
 class Database():
 
     def __init__(self, db_path) -> None:
-        self.conn = sqlite3.connect(db_path)
+        self.conn = sqlite3.connect(db_path, isolation_level=None)
         self.curs = self.conn.cursor()
+
+    def _sqlStartTransaction(self) -> None:
+        self.curs.execute("BEGIN TRANSACTION;")
+
+    def _sqlCommitTransaction(self) -> None:
+        self.curs.execute("COMMIT TRANSACTION;")
+
+    def _sqlRollbackTransaction(self) -> None:
+        self.curs.execute("ROLLBACK TRANSACTION;")
 
     def _sqlExecute(self, sql: str, *args) -> list[tuple] | None:
         self.curs.execute(sql, *args)
@@ -86,7 +96,22 @@ class Database():
             """, (dup_id, ))
         return [id for (id, *_) in res]
 
+    @contextmanager
+    def startTransaction(self) -> None:
+        self._sqlStartTransaction()
+        try:
+            yield
+        except sqlite3.Error as e:
+            try:
+                self._sqlRollbackTransaction()
+            except sqlite3.OperationalError:
+                pass
+            raise e
+        else:
+            self._sqlCommitTransaction()
+
     def initialize(self, root_path: str = "/") -> None:
+        # cursor.executescript implicitly commit any pending transactions, cannot apply context manager startTransaction() here.
         self._dropAll()
         self._sqlExecuteScript("""--sql
             PRAGMA foreign_keys = ON;
@@ -129,7 +154,7 @@ class Database():
         self.rootDirID = self.insertDir(root_path, None)
         
     def commit(self) -> None:
-        self.conn.commit()
+        self._sqlCommitTransaction()
 
     def dumpTable(self, table: str) -> None:
         '''Not SQL injection safe!'''
@@ -168,7 +193,8 @@ class Database():
 
             # Insert file if no match is found
             else:
-                return self._sqlInsertFile(path, size, dir_id, hash)
+                self._sqlInsertFile(path, size, dir_id, hash)
+                return
 
         # For file smaller than 1024, first scan (partial hash) or file bigger than 1024, second scan (full hash)
         res = self._sqlGetFirst("""--sql
@@ -182,16 +208,17 @@ class Database():
 
         # Freshly detected duplicate, insert new row in "duplicates"
         # TODO: Add hash_complete column to duplicates
-        if file_id and (not dup_id):
-            dup_id = self._sqlInsertDuplicate("file")
+        with self.startTransaction():
+            if file_id and (not dup_id):
+                dup_id = self._sqlInsertDuplicate("file")
 
-            self._sqlExecute("""--sql
-                UPDATE files
-                SET duplicate_id = ?
-                WHERE id = ?
-            """, (dup_id, file_id))
+                self._sqlExecute("""--sql
+                    UPDATE files
+                    SET duplicate_id = ?
+                    WHERE id = ?
+                """, (dup_id, file_id))
 
-        self._sqlInsertFile(path, size, dir_id, hash, hash_complete, dup_id)
+            self._sqlInsertFile(path, size, dir_id, hash, hash_complete, dup_id)
 
     def updateDirHash(self, id: int, hash: str) -> None:
         res = self._sqlGetFirst("""--sql
@@ -206,38 +233,39 @@ class Database():
         if old_hash == hash:
             return
 
-        # If duplicate record exists for old hash, remove it
-        if old_dup_id:
-            res = self._sqlGetDirsFromDupID(old_dup_id)
-            # If there's only 2 dirs with same old_dup_id, remove the entry in duplicates table
-            if len(res) == 2:
-                self._sqlDirRemoveDupID(res)
-                self._sqlRemoveDuplicate(old_dup_id)
-            
-            else:
-                self._sqlDirRemoveDupID((id, ))
+        with self.startTransaction():
+            # If duplicate record exists for old hash, remove it
+            if old_dup_id:
+                res = self._sqlGetDirsFromDupID(old_dup_id)
+                # If there's only 2 dirs with same old_dup_id, remove the entry in duplicates table
+                if len(res) == 2:
+                    self._sqlDirRemoveDupID(res)
+                    self._sqlRemoveDuplicate(old_dup_id)
+                
+                else:
+                    self._sqlDirRemoveDupID((id, ))
 
-        # Check if there is a duplicate folder
-        res = self._sqlGetFirst("""--sql
-                SELECT id, duplicate_id
-                FROM dirs
-                WHERE hash = ?
-                LIMIT 1
-            """, (hash, ))
+            # Check if there is a duplicate folder
+            res = self._sqlGetFirst("""--sql
+                    SELECT id, duplicate_id
+                    FROM dirs
+                    WHERE hash = ?
+                    LIMIT 1
+                """, (hash, ))
 
-        dir_id, dup_id = res or (None, None)
+            dir_id, dup_id = res or (None, None)
 
-        # Freshly detected duplicate folder
-        if dir_id and (not dup_id):
-            dup_id = self._sqlInsertDuplicate("dir")
+            # Freshly detected duplicate folder
+            if dir_id and (not dup_id):
+                dup_id = self._sqlInsertDuplicate("dir")
 
-            self._sqlExecute("""--sql
-                UPDATE dirs
-                SET duplicate_id = ?
-                WHERE id = ?
-            """, (dup_id, dir_id))
+                self._sqlExecute("""--sql
+                    UPDATE dirs
+                    SET duplicate_id = ?
+                    WHERE id = ?
+                """, (dup_id, dir_id))
 
-        self._sqlUpdateDir(id, hash, dup_id)
+            self._sqlUpdateDir(id, hash, dup_id)
 
     def updateFileCompleteHash(self, id: int, hash_complete: str) -> None:
         self._sqlExecute("""--sql
