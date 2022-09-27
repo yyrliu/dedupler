@@ -13,45 +13,45 @@ class PartialHashCollisionException(Exception):
 
 class Database():
 
-    def __init__(self, db_path):
+    def __init__(self, db_path) -> None:
         self.conn = sqlite3.connect(db_path)
         self.curs = self.conn.cursor()
 
-    def _sqlExecute(self, *args):
-        self.curs.execute(*args)
+    def _sqlExecute(self, sql: str, *args) -> list[tuple] | None:
+        self.curs.execute(sql, *args)
         res = self.curs.fetchall()
         return res or None
 
-    def _sqlExecuteMany(self, *args):
-        self.curs.executemany(*args)
+    def _sqlExecuteMany(self, sql: str, *args) -> list[tuple] | None:
+        self.curs.executemany(sql, *args)
         res = self.curs.fetchall()
         return res or None
 
-    def _sqlExecuteScript(self, script):
+    def _sqlExecuteScript(self, script: str) -> None:
         self.curs.executescript(script)
 
-    def _sqlGetFirst(self, *args):
-        res = self._sqlExecute(*args)
+    def _sqlGetFirst(self, sql: str, *args) -> tuple | None:
+        res = self._sqlExecute(sql, *args)
         return res[0] if res else None
 
-    def _sqlInsertDir(self, path, parent_id, dup_id):
+    def _sqlInsertDir(self, path: str, parent_id: int, dup_id: int) -> None:
         self._sqlExecute("""--sql
                 INSERT INTO dirs (path, parent_id, duplicate_id) VALUES (?, ?, ?)
             """, (path, parent_id, dup_id))
 
-    def _sqlInsertFile(self, path, size, dir_id, hash, hash_complete=None, dup_id=None):
+    def _sqlInsertFile(self, path: str, size: int, dir_id: int, hash: str, hash_complete: str | None = None, dup_id: int | None = None) -> None:
         self._sqlExecute("""--sql
                 INSERT INTO files (path, size, dir_id, hash, hash_complete, duplicate_id) VALUES (?, ?, ?, ?, ?, ?)
             """, (path, size, dir_id, hash, hash_complete, dup_id))
 
-    def _sqlUpdateDir(self, id, hash, dup_id=None):
+    def _sqlUpdateDir(self, id, hash, dup_id=None) -> None:
         self._sqlExecute("""--sql
                 UPDATE dirs
                 SET hash = ?, duplicate_id = ?
                 WHERE id = ?
             """, (hash, dup_id, id))
 
-    def _sqlDirRemoveDupID(self, ids):
+    def _sqlDirRemoveDupID(self, ids: Iterable[int]) -> None:
         ids = [(id, ) for id in ids]
         self._sqlExecuteMany("""--sql
                 UPDATE dirs
@@ -59,34 +59,34 @@ class Database():
                 WHERE id = ?
             """, ids)
 
-    def _lastRowID(self):
+    def _lastRowID(self) -> int | None:
         return self.curs.lastrowid
 
-    def _dropAll(self):
+    def _dropAll(self) -> None:
         self._sqlExecuteScript("""--sql
             DROP TABLE IF EXISTS files;
             DROP TABLE IF EXISTS dirs;
             DROP TABLE IF EXISTS duplicates;
         """)
 
-    def _sqlInsertDuplicate(self, type):
+    def _sqlInsertDuplicate(self, type) -> int | None:
         self._sqlExecute("""--sql
                 INSERT INTO duplicates (type) VALUES (?)
             """, (type, ))
         return self._lastRowID()
 
-    def _sqlRemoveDuplicate(self, id):
+    def _sqlRemoveDuplicate(self, id) -> None:
         self._sqlExecute("""--sql
                 DELETE FROM duplicates WHERE id = ?;
             """, (id, ))
 
-    def _sqlGetDirsFromDupID(self, dup_id: Iterable):
+    def _sqlGetDirsFromDupID(self, dup_id: Iterable[int]) -> list[int]:
         res = self._sqlExecute("""--sql
                 SELECT id FROM dirs WHERE duplicate_id = ?
             """, (dup_id, ))
         return [id for (id, *_) in res]
 
-    def initialize(self, root_path="/"):
+    def initialize(self, root_path: str = "/") -> None:
         self._dropAll()
         self._sqlExecuteScript("""--sql
             PRAGMA foreign_keys = ON;
@@ -128,21 +128,21 @@ class Database():
 
         self.rootDirID = self.insertDir(root_path, None)
         
-    def commit(self):
+    def commit(self) -> None:
         self.conn.commit()
 
-    def dumpTable(self, table):
+    def dumpTable(self, table: str) -> None:
         '''Not SQL injection safe!'''
 
         print("\n----- " + f'Dumping table "{table}"' " -----\n" )
         print(pd.read_sql_query(f"SELECT * FROM {table}", self.conn))
         print("\n----- " + f'End of table "{table}"' " -----\n" )
 
-    def insertDir(self, path, parent_id ,dup_id=None):
+    def insertDir(self, path: str, parent_id: int, dup_id: int | None = None) -> int | None:
         self._sqlInsertDir(path, parent_id, dup_id)
         return self._lastRowID()
 
-    def insertFile(self, path, size, dir_id, hash, hash_complete=None):
+    def insertFile(self, path: str, size: int, dir_id: int, hash: str, hash_complete: str | None = None) -> None:
         # If file size < 1024, hash_complete will be set to the same value as hash
         if size < 1024:
             hash_complete = hash
@@ -151,8 +151,8 @@ class Database():
         if not hash_complete:
             res = self._sqlGetFirst("""--sql
                 SELECT id, path, dir_id, hash_complete
-                FROM files AS f
-                WHERE f.hash = ? AND f.size = ?
+                FROM files
+                WHERE hash = ? AND size = ?
                 LIMIT 1
             """, (hash, size))
 
@@ -173,8 +173,8 @@ class Database():
         # For file smaller than 1024, first scan (partial hash) or file bigger than 1024, second scan (full hash)
         res = self._sqlGetFirst("""--sql
                 SELECT id, duplicate_id
-                FROM files AS f
-                WHERE f.hash_complete = ? AND f.size = ?
+                FROM files
+                WHERE hash_complete = ? AND size = ?
                 LIMIT 1
             """, (hash_complete, size))
 
@@ -193,11 +193,11 @@ class Database():
 
         self._sqlInsertFile(path, size, dir_id, hash, hash_complete, dup_id)
 
-    def updateDirHash(self, id, hash):
+    def updateDirHash(self, id: int, hash: str) -> None:
         res = self._sqlGetFirst("""--sql
                 SELECT hash, duplicate_id
-                FROM dirs AS d
-                WHERE d.id = ?
+                FROM dirs
+                WHERE id = ?
             """, (id, ))
 
         old_hash, old_dup_id = res
@@ -209,7 +209,7 @@ class Database():
         # If duplicate record exists for old hash, remove it
         if old_dup_id:
             res = self._sqlGetDirsFromDupID(old_dup_id)
-            # If there's only 2 dirs with same old_dup_id, remove the entry from duplicates table
+            # If there's only 2 dirs with same old_dup_id, remove the entry in duplicates table
             if len(res) == 2:
                 self._sqlDirRemoveDupID(res)
                 self._sqlRemoveDuplicate(old_dup_id)
@@ -220,8 +220,8 @@ class Database():
         # Check if there is a duplicate folder
         res = self._sqlGetFirst("""--sql
                 SELECT id, duplicate_id
-                FROM dirs AS d
-                WHERE d.hash = ?
+                FROM dirs
+                WHERE hash = ?
                 LIMIT 1
             """, (hash, ))
 
@@ -239,12 +239,12 @@ class Database():
 
         self._sqlUpdateDir(id, hash, dup_id)
 
-    def updateFileCompleteHash(self, id, hash_complete):
+    def updateFileCompleteHash(self, id: int, hash_complete: str) -> None:
         self._sqlExecute("""--sql
-                UPDATE files SET hash_complete=? WHERE id=?
+                UPDATE files SET hash_complete = ? WHERE id = ?
             """, (hash_complete, id))
 
-    def getDirHash(self, id):
+    def getDirHash(self, id: int) -> str:
         res = self._sqlGetFirst("""--sql
                 SELECT hash FROM dirs WHERE id = ?
             """, (id, ))
@@ -252,7 +252,7 @@ class Database():
         hash, *_ = res
         return hash
 
-    def getDirParentID(self, id):
+    def getDirParentID(self, id: int) -> int:
         res = self._sqlGetFirst("""--sql
                 SELECT parent_id FROM dirs WHERE id = ?
             """, (id, ))
@@ -260,7 +260,7 @@ class Database():
         id, *_ = res
         return id
 
-    def getChildrenHashes(self, id):
+    def getChildrenHashes(self, id: int) -> list[str]:
         res = self._sqlExecute("""--sql
                 SELECT id, hash, hash_complete FROM files WHERE dir_id = ?
                 UNION ALL
@@ -275,6 +275,6 @@ class Database():
 
         return hashes
 
-    def close(self):
+    def close(self) -> None:
         self.curs.close()
         self.conn.close()
