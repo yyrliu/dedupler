@@ -1,3 +1,6 @@
 __pycache__
 .vscode
 test/mock_data
+Lib
+Scripts
+pyvenv.cfg

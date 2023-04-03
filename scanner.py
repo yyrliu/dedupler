@@ -13,7 +13,8 @@ class SymlinkFound(Exception):
 class UnexpectedPathType(Exception):
     pass
 
-img_extensions = ('.jpg', '.png', '.gif', '.tiff', '.jpeg')
+# set of extensions that are supported by PIL.Image
+img_extensions = ('.jpg', '.png', '.gif', '.tiff', '.jpeg', '.bmp')
 
 class Scanner():
     def __init__(self, db_path: Path | str) -> None:
@@ -33,7 +34,7 @@ class Scanner():
     def file_handler(self, path: Path) -> None:
         size = path.stat().st_size
 
-        if path.suffix in img_extensions:
+        if path.suffix.casefold() in img_extensions:
             image_hash = hashers.image_hasher(path)
             self.db.insertFile(str(path), size, self.current_dir_id, image_hash, image_hash)
 
