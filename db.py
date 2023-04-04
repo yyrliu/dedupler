@@ -1,7 +1,11 @@
 import sqlite3
+import logging
 from typing import Iterable
 import pandas as pd
 from contextlib import contextmanager
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 class PartialHashCollisionException(Exception):
     def __init__(self, message, id, path, dir_id, has_hash_complete):
@@ -15,6 +19,7 @@ class PartialHashCollisionException(Exception):
 class Database():
 
     def __init__(self, db_path) -> None:
+        logger.info(f"Initializing database connection, db_path={db_path}")
         self.conn = sqlite3.connect(db_path, isolation_level=None)
         self.curs = self.conn.cursor()
 
@@ -102,10 +107,13 @@ class Database():
         try:
             yield
         except sqlite3.Error as e:
+            logger.error(f"SQL error: {e}")
             try:
+                logger.info(f"Trying to rowback transaction...")
                 self._sqlRollbackTransaction()
+                logger.info(f"Transaction rolled back.")
             except sqlite3.OperationalError:
-                pass
+                logger.info(f"Rowback failed. The transaction may has already been rolled back automatically by the error response.")
             raise e
         else:
             self._sqlCommitTransaction()

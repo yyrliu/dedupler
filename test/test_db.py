@@ -1,6 +1,9 @@
 import unittest
 import db as DB
 import sqlite3
+import logging
+
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s: %(name)s [%(levelname)s] %(message)s')
 
 class TestPrepMock(unittest.TestCase):
     def setUp(self):
