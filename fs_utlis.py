@@ -12,7 +12,7 @@ def cd(newdir):
     finally:
         os.chdir(prevdir)
 
-def dir_dfs(path):
+def dir_dfs(path) -> tuple[str, Path | None]:
     '''Generator for all files and directories in a directory, directory path and comes before the children are iterated and "None" comes after everything.'''
 
     for p in Path(path).iterdir():

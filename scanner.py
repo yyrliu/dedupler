@@ -80,19 +80,19 @@ class Scanner():
     def symlink_handler(path: Path) -> NoReturn:
         raise SymlinkFound(f'Symlink "{path} found in directory, unable to handle it')
 
-    def switcher(self, type, *args) -> None:
+    def handlerSwitch(self, type, path) -> None:
         if type == 'dir':
-            self.dir_handler(*args)
+            self.dir_handler(path)
         elif type == 'file':
-            self.file_handler(*args)
+            self.file_handler(path)
         elif type == 'symlink':
-            Scanner.symlink_handler(*args)
+            Scanner.symlink_handler(path)
         else:
             raise UnexpectedPathType
 
     def scan(self, path: Path) -> None:
         for type, p in fs_utlis.dir_dfs(path):
-            self.switcher(type, p)
+            self.handlerSwitch(type, p)
 
     def dumpResults(self) -> None:
         self.db.dumpTable("dirs")
