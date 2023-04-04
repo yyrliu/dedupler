@@ -22,6 +22,13 @@ class TestPrepMock(unittest.TestCase):
         res = self.db._sqlExecute("""SELECT * FROM files""")
         self.assertEqual(res, [
             (1, "test/path/to/file", 50, dirID, "hashOfTestFile", "hashOfTestFile", None)])
+        
+    def test_rollback(self):
+        dirID = self.db.insertDir("test/path/to", self.db.rootDirID)
+        with self.assertRaises(sqlite3.Error):
+            self.db.insertFile("test/path/to/file", -1, dirID, "hashOfTestFile")
+        res = self.db._sqlExecute("""SELECT * FROM files""")
+        self.assertEqual(res, None)
 
     def test_insert_new_small_without_parent_dir(self):
         with self.assertRaises(sqlite3.IntegrityError):

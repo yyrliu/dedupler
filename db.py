@@ -124,7 +124,7 @@ class Database():
             CREATE TABLE files (
                 id INTEGER PRIMARY KEY,
                 path TEXT NOT NULL UNIQUE,
-                size INTEGER NOT NULL,
+                size INTEGER NOT NULL CHECK( size >= 0 ),
                 dir_id INTEGER NOT NULL,
                 hash TEXT NOT NULL,
                 hash_complete TEXT,
