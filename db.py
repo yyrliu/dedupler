@@ -24,14 +24,19 @@ class Database():
         self.curs = self.conn.cursor()
 
     def _sqlStartTransaction(self) -> None:
-        self.curs.execute("BEGIN TRANSACTION;")
+        self.curs.execute("BEGIN;")
 
     def _sqlCommitTransaction(self) -> None:
-        self.curs.execute("COMMIT TRANSACTION;")
+        self.curs.execute("COMMIT;")
 
     def _sqlRollbackTransaction(self) -> None:
-        self.curs.execute("ROLLBACK TRANSACTION;")
-
+        try:
+            logger.info(f"Trying to rowback transaction...")
+            self.curs.execute("ROLLBACK;")
+            logger.info(f"Transaction rolled back.")
+        except sqlite3.OperationalError as e:
+            logger.info(f"Rowback failed: {e}. The transaction may has already been rolled back automatically by the error response.", exc_info=True)
+        
     def _sqlExecute(self, sql: str, *args) -> list[tuple] | None:
         self.curs.execute(sql, *args)
         res = self.curs.fetchall()
@@ -102,19 +107,14 @@ class Database():
         return [id for (id, *_) in res]
 
     @contextmanager
-    def startTransaction(self) -> None:
+    def transaction(self) -> None:
         self._sqlStartTransaction()
         try:
             yield
         except sqlite3.Error as e:
-            logger.error(f"SQL error: {e}")
-            try:
-                logger.info(f"Trying to rowback transaction...")
-                self._sqlRollbackTransaction()
-                logger.info(f"Transaction rolled back.")
-            except sqlite3.OperationalError:
-                logger.info(f"Rowback failed. The transaction may has already been rolled back automatically by the error response.")
-            raise e
+            logger.error(f"Transaction failed: {e}", exc_info=True)
+            self._sqlRollbackTransaction()
+            raise
         else:
             self._sqlCommitTransaction()
 
@@ -122,8 +122,12 @@ class Database():
         # cursor.executescript implicitly commit any pending transactions, cannot apply context manager startTransaction() here.
         self._dropAll()
         self._sqlExecuteScript("""--sql
-            PRAGMA foreign_keys = ON;
+            
+            -- PRAGMA foreign_keys is a no-op within a transaction; foreign key constraint enforcement may only be enabled or disabled when there is no pending BEGIN or SAVEPOINT.
+            PRAGMA foreign_keys = on;
 
+            BEGIN;
+            
             CREATE TABLE duplicates (
                 id INTEGER PRIMARY KEY,
                 type TEXT NOT NULL
@@ -157,6 +161,8 @@ class Database():
             CREATE INDEX idx_files_hash_complete ON files (hash_complete);
             CREATE INDEX idx_dirs_hash ON dirs (hash);
             CREATE INDEX idx_dirs_duplicate_id ON dirs (duplicate_id);
+
+            COMMIT;
         """)
 
         self.rootDirID = self.insertDir(root_path, None)
@@ -216,7 +222,7 @@ class Database():
 
         # Freshly detected duplicate, insert new row in "duplicates"
         # TODO: Add hash_complete column to duplicates
-        with self.startTransaction():
+        with self.transaction():
             if file_id and (not dup_id):
                 dup_id = self._sqlInsertDuplicate("file")
 
@@ -241,7 +247,7 @@ class Database():
         if old_hash == hash:
             return
 
-        with self.startTransaction():
+        with self.transaction():
             # If duplicate record exists for old hash, remove it
             if old_dup_id:
                 res = self._sqlGetDirsFromDupID(old_dup_id)
