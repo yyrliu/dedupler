@@ -20,7 +20,7 @@ class Scanner():
     def __init__(self, db_path: Path | str) -> None:
         self.db = DB.Database(db_path)
         self.db.initialize()
-        self.dir_stack =[]
+        self.dir_stack = []
 
     @property
     def current_dir_id(self) -> int:
@@ -33,15 +33,16 @@ class Scanner():
 
     def file_handler(self, path: Path) -> None:
         size = path.stat().st_size
+        fileID = self.db.insertFile(str(path), size, self.current_dir_id)
 
         if path.suffix.casefold() in img_extensions:
             image_hash = hashers.image_hasher(path)
-            self.db.insertFile(str(path), size, self.current_dir_id, image_hash, image_hash)
+            self.db.updateFileHash(fileID, image_hash, image_hash)
 
         else:
             partial_hash = hashers.partial_hasher(path, size)
             try:
-                self.db.insertFile(str(path), size, self.current_dir_id, partial_hash)
+                self.db.updateFileHash(fileID, partial_hash, partial_hash)
             # Catch exception if identical partial hash exists
             except DB.PartialHashCollisionException as e:
                 # Add complete hash to collided file if not exists
@@ -52,7 +53,7 @@ class Scanner():
 
                 # Resummit insertion request
                 full_hash = hashers.full_hasher(path)
-                self.db.insertFile(str(path), size, self.current_dir_id, partial_hash, full_hash)
+                self.db.updateFileHash(fileID, partial_hash, partial_hash, full_hash)
 
     def dir_handler(self, path: Path) -> None:
         if path is None:

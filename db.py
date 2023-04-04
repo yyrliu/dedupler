@@ -50,6 +50,12 @@ class Database():
     def _sqlExecuteScript(self, script: str) -> None:
         self.curs.executescript(script)
 
+    def _sqlGetOne(self, sql: str, *args) -> tuple | None:
+        res = self._sqlExecute(sql, *args)
+        if res and len(res) > 1:
+            raise Exception("More than one result returned.")
+        return res[0] if res else None
+
     def _sqlGetFirst(self, sql: str, *args) -> tuple | None:
         res = self._sqlExecute(sql, *args)
         return res[0] if res else None
@@ -59,10 +65,10 @@ class Database():
                 INSERT INTO dirs (path, parent_id, duplicate_id) VALUES (?, ?, ?)
             """, (path, parent_id, dup_id))
 
-    def _sqlInsertFile(self, path: str, size: int, dir_id: int, hash: str, hash_complete: str | None = None, dup_id: int | None = None) -> None:
+    def _sqlInsertFile(self, path: str, size: int, dir_id: int) -> None:
         self._sqlExecute("""--sql
-                INSERT INTO files (path, size, dir_id, hash, hash_complete, duplicate_id) VALUES (?, ?, ?, ?, ?, ?)
-            """, (path, size, dir_id, hash, hash_complete, dup_id))
+                INSERT INTO files (path, size, dir_id) VALUES (?, ?, ?)
+            """, (path, size, dir_id))
 
     def _sqlUpdateDir(self, id, hash, dup_id=None) -> None:
         self._sqlExecute("""--sql
@@ -138,7 +144,7 @@ class Database():
                 path TEXT NOT NULL UNIQUE,
                 size INTEGER NOT NULL CHECK( size >= 0 ),
                 dir_id INTEGER NOT NULL,
-                hash TEXT NOT NULL,
+                hash TEXT,
                 hash_complete TEXT,
                 duplicate_id INTEGER,
                 FOREIGN KEY(duplicate_id) REFERENCES duplicates(id),
@@ -181,58 +187,9 @@ class Database():
         self._sqlInsertDir(path, parent_id, dup_id)
         return self._lastRowID()
 
-    def insertFile(self, path: str, size: int, dir_id: int, hash: str, hash_complete: str | None = None) -> None:
-        # If file size < 1024, hash_complete will be set to the same value as hash
-        if size < 1024:
-            hash_complete = hash
-
-        # For file bigger than 1024, first scan (partial hash)
-        if not hash_complete:
-            res = self._sqlGetFirst("""--sql
-                SELECT id, path, dir_id, hash_complete
-                FROM files
-                WHERE hash = ? AND size = ?
-                LIMIT 1
-            """, (hash, size))
-
-            # If there is a match, throw exception to request a full hash
-            if res:
-                res_id, res_path, res_dir_id, res_has_hash_complete = res
-                exception_str = (
-                    f'Partial hash collision detected! Between files:\n'
-                    f'"{res_path}",\n'
-                    f'"{path}"\n'
-                )
-                raise PartialHashCollisionException(exception_str, res_id, res_path, res_dir_id, bool(res_has_hash_complete))
-
-            # Insert file if no match is found
-            else:
-                self._sqlInsertFile(path, size, dir_id, hash)
-                return
-
-        # For file smaller than 1024, first scan (partial hash) or file bigger than 1024, second scan (full hash)
-        res = self._sqlGetFirst("""--sql
-                SELECT id, duplicate_id
-                FROM files
-                WHERE hash_complete = ? AND size = ?
-                LIMIT 1
-            """, (hash_complete, size))
-
-        file_id, dup_id = res or (None, None)
-
-        # Freshly detected duplicate, insert new row in "duplicates"
-        # TODO: Add hash_complete column to duplicates
-        with self.transaction():
-            if file_id and (not dup_id):
-                dup_id = self._sqlInsertDuplicate("file")
-
-                self._sqlExecute("""--sql
-                    UPDATE files
-                    SET duplicate_id = ?
-                    WHERE id = ?
-                """, (dup_id, file_id))
-
-            self._sqlInsertFile(path, size, dir_id, hash, hash_complete, dup_id)
+    def insertFile(self, path: str, size: int, dir_id: int) -> None:
+        self._sqlInsertFile(path, size, dir_id)
+        return self._lastRowID()
 
     def updateDirHash(self, id: int, hash: str) -> None:
         res = self._sqlGetFirst("""--sql
@@ -280,6 +237,75 @@ class Database():
                 """, (dup_id, dir_id))
 
             self._sqlUpdateDir(id, hash, dup_id)
+
+    def updateFileHash(self, id: int, hash: str, hash_complete: str | None = None) -> None:
+        # Get file path and size 
+        path, size = self._sqlGetOne("""--sql
+            SELECT path, size
+            FROM files
+            WHERE id = ?
+        """, (id, ))
+
+        # If file size < 1024, hash_complete will be set to the same value as hash
+        if size < 1024:
+            hash_complete = hash
+
+        # For file bigger than 1024, first scan (partial hash)
+        if not hash_complete:
+            res = self._sqlGetFirst("""--sql
+                SELECT id, path, dir_id, hash_complete
+                FROM files
+                WHERE hash = ? AND size = ?
+                LIMIT 1
+            """, (hash, size))
+
+            # If there is a match, throw exception to request a full hash
+            if res:
+                res_id, res_path, res_dir_id, res_has_hash_complete = res
+                exception_str = (
+                    f'Partial hash collision detected! Between files:\n'
+                    f'"{res_path}",\n'
+                    f'"{path}"\n'
+                )
+                raise PartialHashCollisionException(exception_str, res_id, res_path, res_dir_id, bool(res_has_hash_complete))
+
+            # Simple file hash update if no match is found
+            else:
+                self._sqlExecute("""--sql
+                    UPDATE files
+                    SET hash = ?
+                    WHERE id = ?
+                """, (hash, id))
+                return
+
+        # For file smaller than 1024, first scan (partial hash) or file bigger than 1024, second scan (full hash)
+        res = self._sqlGetFirst("""--sql
+                SELECT id, duplicate_id
+                FROM files
+                WHERE hash_complete = ? AND size = ?
+                LIMIT 1
+            """, (hash_complete, size))
+
+        file_id, dup_id = res or (None, None)
+
+        # Freshly detected duplicate, insert new row in "duplicates"
+        # TODO: Add hash_complete column to duplicates
+        with self.transaction():
+            if file_id and (not dup_id):
+                dup_id = self._sqlInsertDuplicate("file")
+
+                self._sqlExecute("""--sql
+                    UPDATE files
+                    SET duplicate_id = ?
+                    WHERE id = ?
+                """, (dup_id, file_id))
+
+            self._sqlExecute("""--sql
+                    UPDATE files
+                    SET hash = ?, hash_complete = ?, duplicate_id = ?
+                    WHERE id = ?
+                """, (hash, hash_complete, dup_id, id))
+
 
     def updateFileCompleteHash(self, id: int, hash_complete: str) -> None:
         self._sqlExecute("""--sql

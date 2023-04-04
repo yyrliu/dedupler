@@ -21,25 +21,25 @@ class TestPrepMock(unittest.TestCase):
 
     def test_insert_new_small_file(self):
         dirID = self.db.insertDir("test/path/to", self.db.rootDirID)
-        self.db.insertFile("test/path/to/file", 50, dirID, "hashOfTestFile")
+        fileID = self.db.insertFile("test/path/to/file", 50, dirID)
+        self.db.updateFileHash(fileID, "hashOfTestFile")
         res = self.db._sqlExecute("""SELECT * FROM files""")
         self.assertEqual(res, [
             (1, "test/path/to/file", 50, dirID, "hashOfTestFile", "hashOfTestFile", None)])
         
     def test_rollback(self):
-        dirID = self.db.insertDir("test/path/to", self.db.rootDirID)
         with self.assertRaises(sqlite3.Error):
-            self.db.insertFile("test/path/to/file", -1, dirID, "hashOfTestFile")
-        res = self.db._sqlExecute("""SELECT * FROM files""")
-        self.assertEqual(res, None)
+            with self.db.transaction():
+                self.db.insertDir("test/path/to", 10)
 
     def test_insert_new_small_without_parent_dir(self):
         with self.assertRaises(sqlite3.IntegrityError):
-            self.db.insertFile("test/path/to/file", 50, 2, "hashOfTestFile")
+            self.db.insertFile("test/path/to/file", 50, 2)
 
     def test_insert_new_large_file(self):
         dirID = self.db.insertDir("test/path/to", self.db.rootDirID)
-        self.db.insertFile("test/path/to/file", 3000, dirID, "hashOfTestFile")
+        fileID = self.db.insertFile("test/path/to/file", 3000, dirID)
+        self.db.updateFileHash(fileID, "hashOfTestFile")
         res = self.db._sqlExecute("""SELECT * FROM files""")
         self.assertEqual(res, [
             (1, "test/path/to/file", 3000, dirID, "hashOfTestFile", None, None)])
@@ -47,8 +47,10 @@ class TestPrepMock(unittest.TestCase):
     def test_insert_dup_small_file(self):
         dirID_1 = self.db.insertDir("test/path/to", self.db.rootDirID)
         dirID_2 = self.db.insertDir("test/path2/to", self.db.rootDirID)
-        self.db.insertFile("test/path/to/file", 50, dirID_1, "hashOfTestFile")
-        self.db.insertFile("test/path2/to/file", 50, dirID_2, "hashOfTestFile")
+        fileID_1 = self.db.insertFile("test/path/to/file", 50, dirID_1)
+        fileID_2 = self.db.insertFile("test/path2/to/file", 50, dirID_2)
+        self.db.updateFileHash(fileID_1, "hashOfTestFile")
+        self.db.updateFileHash(fileID_2, "hashOfTestFile")
         res = self.db._sqlExecute("""SELECT * FROM duplicates""")
         (duplID, *_), *_ = res
         self.assertEqual(res, [(1, "file")])
@@ -59,9 +61,11 @@ class TestPrepMock(unittest.TestCase):
 
     def test_insert_dup_large_file(self):
         dirID = self.db.insertDir("test/path/to", self.db.rootDirID)
-        self.db.insertFile("test/path/to/file", 3000, dirID, "hashOfTestFile")
+        fileID_1 = self.db.insertFile("test/path/to/file", 3000, dirID)
+        fileID_2 = self.db.insertFile("test/path2/to/file", 3000, dirID)
+        self.db.updateFileHash(fileID_1, "hashOfTestFile")
         with self.assertRaises(DB.PartialHashCollisionException) as e:
-            self.db.insertFile("test/path2/to/file", 3000, dirID, "hashOfTestFile")
+            self.db.updateFileHash(fileID_2, "hashOfTestFile")
 
         exception = e.exception
         self.assertEqual(exception.id, 1)
@@ -70,9 +74,9 @@ class TestPrepMock(unittest.TestCase):
 
     def test_update_file_complete_hash(self):
         dirID = self.db.insertDir("test/path/to", self.db.rootDirID)
-        self.db.insertFile("test/path/to/file", 3000, dirID, "hashOfTestFile")
-        id = self.db._lastRowID()
-        self.db.updateFileCompleteHash(id, "completeHashOfTestFile")
+        fileID = self.db.insertFile("test/path/to/file", 3000, dirID)
+        self.db.updateFileHash(fileID, "hashOfTestFile")
+        self.db.updateFileCompleteHash(fileID, "completeHashOfTestFile")
         res = self.db._sqlExecute("""SELECT * FROM files""")
         self.assertEqual(res, [
             (1, "test/path/to/file", 3000, dirID, "hashOfTestFile", "completeHashOfTestFile", None)])
@@ -80,10 +84,13 @@ class TestPrepMock(unittest.TestCase):
     def test_insert_dup_large_file_with_complete_hash(self):
         dirID_1 = self.db.insertDir("test/path/to", self.db.rootDirID)
         dirID_2 = self.db.insertDir("test/path2/to", self.db.rootDirID)
-        self.db.insertFile("test/path/to/file", 3000, dirID_1, "hashOfTestFile")
-        id = self.db._lastRowID()
-        self.db.updateFileCompleteHash(id, "completeHashOfTestFile")
-        self.db.insertFile("test/path2/to/file", 3000, dirID_2, "hashOfTestFile", "completeHashOfTestFile")
+
+        fileID_1 = self.db.insertFile("test/path/to/file", 3000, dirID_1)
+        self.db.updateFileHash(fileID_1, "hashOfTestFile")
+        self.db.updateFileCompleteHash(fileID_1, "completeHashOfTestFile")
+        fileID_2 = self.db.insertFile("test/path2/to/file", 3000, dirID_2)
+        self.db.updateFileHash(fileID_2, "hashOfTestFile", "completeHashOfTestFile")
+
         res = self.db._sqlExecute("""SELECT * FROM duplicates""")
         (duplID, *_), *_ = res
         self.assertEqual(res, [(1, "file")])
@@ -161,9 +168,12 @@ class TestPrepMock(unittest.TestCase):
         dirID_2 = self.db.insertDir("test/path2/to", self.db.rootDirID)
         dirID_child = self.db.insertDir("test/path/to/child_dir", dirID_1)
         self.db.updateDirHash(dirID_child, "hashOfTestDir")
-        self.db.insertFile("test/path/to/file_small", 3000, dirID_1, "hashOfTestFileSmall")
-        self.db.insertFile("test/path/to/file_big", 3000, dirID_1, "hashOfTestFileBig", "completeHashOfTestFile")
-        self.db.insertFile("test/path2/to/file", 3000, dirID_2, "hashOfTestFile")
+        fileSmallID = self.db.insertFile("test/path/to/file_small", 3000, dirID_1)
+        self.db.updateFileHash(fileSmallID, "hashOfTestFileSmall")
+        fileBigID = self.db.insertFile("test/path/to/file_big", 3000, dirID_1)
+        self.db.updateFileHash(fileBigID, "hashOfTestFileBig", "completeHashOfTestFile")
+        filePath2ID = self.db.insertFile("test/path2/to/file", 3000, dirID_2)
+        self.db.updateFileHash(filePath2ID, "hashOfTestFile")
         res = self.db.getChildrenHashes(dirID_1)
         print(res)
         self.assertEqual(res, ['hashOfTestFileSmall', 'completeHashOfTestFile', 'hashOfTestDir'])
