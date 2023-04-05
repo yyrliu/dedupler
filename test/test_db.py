@@ -9,6 +9,7 @@ class TestPrepMock(unittest.TestCase):
     def setUp(self):
         self.db = DB.Database(":memory:")
         self.db.initialize()
+        self.db.setRootDir(".")
 
     def tearDown(self):
         self.db.close()
@@ -18,6 +19,10 @@ class TestPrepMock(unittest.TestCase):
         self.assertEqual(dirID, 2)
         res = self.db._sqlExecute("""SELECT * FROM dirs""")
         self.assertEqual(res[1], (2, "test/path/to/dir", 1, None, None))
+
+    def test_insert_dir_without_rootDir(self):
+        with self.assertRaises(DB.NoRootDirException):
+            self.db.insertDir("test/path/to/dir", None)
 
     def test_insert_new_small_file(self):
         dirID = self.db.insertDir("test/path/to", self.db.rootDirID)

@@ -1,6 +1,6 @@
 import sqlite3
 import logging
-from typing import Iterable
+from collections.abc import Iterable, Generator
 import pandas as pd
 from contextlib import contextmanager
 
@@ -16,12 +16,17 @@ class PartialHashCollisionException(Exception):
         self.dir_id = dir_id
         self.has_hash_complete = has_hash_complete
 
+class NoRootDirException(Exception):
+    def __init__(self):
+        super().__init__("Root directory is not set. Please call setRootDir() to set it before inserting dirs or files.")
+
 class Database():
 
     def __init__(self, db_path) -> None:
         logger.info(f"Initializing database connection, db_path={db_path}")
         self.conn = sqlite3.connect(db_path, isolation_level=None)
         self.curs = self.conn.cursor()
+        self.rootDirID = None
 
     def _sqlStartTransaction(self) -> None:
         self.curs.execute("BEGIN;")
@@ -124,7 +129,7 @@ class Database():
         else:
             self._sqlCommitTransaction()
 
-    def initialize(self, root_path: str = "/") -> None:
+    def initialize(self) -> None:
         # cursor.executescript implicitly commit any pending transactions, cannot apply context manager startTransaction() here.
         self._dropAll()
         self._sqlExecuteScript("""--sql
@@ -170,8 +175,6 @@ class Database():
 
             COMMIT;
         """)
-
-        self.rootDirID = self.insertDir(root_path, None)
         
     def commit(self) -> None:
         self._sqlCommitTransaction()
@@ -183,11 +186,22 @@ class Database():
         print(pd.read_sql_query(f"SELECT * FROM {table}", self.conn))
         print("\n----- " + f'End of table "{table}"' " -----\n" )
 
+    def setRootDir(self, root_path: str) -> None:
+        self._sqlInsertDir(root_path, None, None)
+        self.rootDirID = self._lastRowID()
+        logger.info(f"Root dir set to {root_path}")
+
     def insertDir(self, path: str, parent_id: int, dup_id: int | None = None) -> int | None:
+        if not isinstance(parent_id, int):
+            raise NoRootDirException()
+        
         self._sqlInsertDir(path, parent_id, dup_id)
         return self._lastRowID()
 
     def insertFile(self, path: str, size: int, dir_id: int) -> None:
+        if not isinstance(dir_id, int):
+            raise NoRootDirException()
+        
         self._sqlInsertFile(path, size, dir_id)
         return self._lastRowID()
 
@@ -342,7 +356,34 @@ class Database():
             hashes.append(hash_complete or hash or '')
 
         return hashes
+    
+    # Generator that returns id of all directors in the database starting from the ones with no children
+    def getDirs(self) -> Generator[tuple, None, None]:
+    # def getDirs(self) -> Generator[int]:
+        res = self._sqlExecute("""--sql
+            WITH RECURSIVE cte (id, parent_id, depth, path) AS (
+                SELECT id, parent_id, 1, path
+                FROM dirs WHERE parent_id IS NULL
+                UNION ALL
+                SELECT dirs.id, dirs.parent_id, cte.depth + 1 AS depth, dirs.path 
+                FROM dirs JOIN cte ON dirs.parent_id = cte.id
+                ORDER BY depth DESC
+            )
+            SELECT * FROM cte ORDER BY depth DESC;
+        """)
 
+        for entry in res:
+            yield entry
+    
+    # Create a generator that returns all the files in the database
+    def getFilesInDir(self, id: int) -> Generator[tuple, None, None]:
+        res = self._sqlExecute("""--sql
+                SELECT id, path, dir_id FROM files WHERE dir_id = ?
+            """, (id, ))
+        
+        for entry in res:
+            yield entry
+    
     def close(self) -> None:
         self.curs.close()
         self.conn.close()

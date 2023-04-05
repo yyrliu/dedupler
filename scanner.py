@@ -91,10 +91,16 @@ class Scanner():
             raise UnexpectedPathType
 
     def scan(self, path: Path) -> None:
+        self.db.setRootDir(str(Path(path)))
         for type, p in fs_utlis.dir_dfs(path):
             self.handlerSwitch(type, p)
 
     def dumpResults(self) -> None:
         self.db.dumpTable("dirs")
-        self.db.dumpTable("files")
-        self.db.dumpTable("duplicates")
+        # self.db.dumpTable("files")
+        # self.db.dumpTable("duplicates")
+        for i in self.db.getDirs():
+            print(f"---{i}---")
+            if not i[0] == self.db.rootDirID:
+                for j in self.db.getFilesInDir(i[0]):
+                    print(j)
