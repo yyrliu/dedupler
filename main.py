@@ -5,6 +5,7 @@ import test.prep_mock as prep_mock
 def main():
     scanner = sc.Scanner(':memory:')
     scanner.scan("./test/mock_data")
+    scanner.hash()
     scanner.dumpResults()
     
 if __name__ == "__main__":

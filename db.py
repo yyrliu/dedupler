@@ -21,7 +21,7 @@ class NoRootDirException(Exception):
         super().__init__("Root directory is not set. Please call setRootDir() to set it before inserting dirs or files.")
 
 class Database():
-
+    # TODO: Move SQL statements to a separate file
     def __init__(self, db_path) -> None:
         logger.info(f"Initializing database connection, db_path={db_path}")
         self.conn = sqlite3.connect(db_path, isolation_level=None)
@@ -378,8 +378,11 @@ class Database():
     # Create a generator that returns all the files in the database
     def getFilesInDir(self, id: int) -> Generator[tuple, None, None]:
         res = self._sqlExecute("""--sql
-                SELECT id, path, dir_id FROM files WHERE dir_id = ?
+                SELECT id, path, size, dir_id FROM files WHERE dir_id = ?
             """, (id, ))
+        
+        if not res:
+            return
         
         for entry in res:
             yield entry
