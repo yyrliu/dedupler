@@ -7,9 +7,8 @@ from contextlib import contextmanager
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-class PartialHashCollisionException(Exception):
-    def __init__(self, message, id, path, dir_id, has_hash_complete):
-        # Call the base class constructor with the parameters it needs
+class PartialHashCollision(Exception):
+    def __init__(self, message: str, id: str, path: str, dir_id: str, has_hash_complete: bool):
         super().__init__(message)
         self.id = id
         self.path = path
@@ -281,7 +280,7 @@ class Database():
                     f'"{res_path}",\n'
                     f'"{path}"\n'
                 )
-                raise PartialHashCollisionException(exception_str, res_id, res_path, res_dir_id, bool(res_has_hash_complete))
+                raise PartialHashCollision(exception_str, res_id, res_path, res_dir_id, bool(res_has_hash_complete))
 
             # Simple file hash update if no match is found
             else:

@@ -89,7 +89,7 @@ class Scanner():
                     try:
                         self.db.updateFileHash(fileId, partial_hash)
                     # Catch exception if identical partial hash exists
-                    except DB.PartialHashCollisionException as e:
+                    except DB.PartialHashCollision as e:
                         # Add complete hash to collided file if not exists
                         if not e.has_hash_complete:
                             e_full_hash = hashers.full_hasher(e.path)

@@ -69,7 +69,7 @@ class TestPrepMock(unittest.TestCase):
         fileID_1 = self.db.insertFile("test/path/to/file", 3000, dirID)
         fileID_2 = self.db.insertFile("test/path2/to/file", 3000, dirID)
         self.db.updateFileHash(fileID_1, "hashOfTestFile")
-        with self.assertRaises(DB.PartialHashCollisionException) as e:
+        with self.assertRaises(DB.PartialHashCollision) as e:
             self.db.updateFileHash(fileID_2, "hashOfTestFile")
 
         exception = e.exception
