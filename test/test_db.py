@@ -34,7 +34,7 @@ class TestPrepMock(unittest.TestCase):
         
     def test_rollback(self):
         with self.assertRaises(sqlite3.Error):
-            with self.db.transaction():
+            with self.db._sqlTransaction():
                 self.db.insertDir("test/path/to", 10)
 
     def test_insert_new_small_without_parent_dir(self):

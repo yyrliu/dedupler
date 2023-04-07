@@ -1,5 +1,6 @@
 import sqlite3
 import logging
+from pathlib import Path
 from collections.abc import Iterable, Generator
 import pandas as pd
 from contextlib import contextmanager
@@ -8,8 +9,13 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 class PartialHashCollision(Exception):
-    def __init__(self, message: str, id: str, path: str, dir_id: str, has_hash_complete: bool):
-        super().__init__(message)
+    def __init__(self, current_path: str, id: str, path: str, dir_id: str, has_hash_complete: bool):
+        exception_msg = (
+            f'Partial hash collision detected! Between files:\n'
+            f'"{current_path}",\n'
+            f'"{path}"\n'
+        )
+        super().__init__(exception_msg)
         self.id = id
         self.path = path
         self.dir_id = dir_id
@@ -21,38 +27,42 @@ class NoRootDirException(Exception):
 
 class Database():
     # TODO: Move SQL statements to a separate file
-    def __init__(self, db_path) -> None:
+    def __init__(self, db_path: Path | str) -> None:
         logger.info(f"Initializing database connection, db_path={db_path}")
-        self.conn = sqlite3.connect(db_path, isolation_level=None)
-        self.curs = self.conn.cursor()
-        self.rootDirID = None
+        self._conn = sqlite3.connect(db_path, isolation_level=None)
+        self._curs = self._conn.cursor()
+        self._rootDirID = None
+
+    @property
+    def rootDirID(self) -> int:
+        return self._rootDirID
 
     def _sqlStartTransaction(self) -> None:
-        self.curs.execute("BEGIN;")
+        self._curs.execute("BEGIN;")
 
     def _sqlCommitTransaction(self) -> None:
-        self.curs.execute("COMMIT;")
+        self._curs.execute("COMMIT;")
 
     def _sqlRollbackTransaction(self) -> None:
         try:
             logger.info(f"Trying to rowback transaction...")
-            self.curs.execute("ROLLBACK;")
+            self._curs.execute("ROLLBACK;")
             logger.info(f"Transaction rolled back.")
         except sqlite3.OperationalError as e:
             logger.info(f"Rowback failed: {e}. The transaction may has already been rolled back automatically by the error response.", exc_info=True)
         
     def _sqlExecute(self, sql: str, *args) -> list[tuple] | None:
-        self.curs.execute(sql, *args)
-        res = self.curs.fetchall()
+        self._curs.execute(sql, *args)
+        res = self._curs.fetchall()
         return res or None
 
     def _sqlExecuteMany(self, sql: str, *args) -> list[tuple] | None:
-        self.curs.executemany(sql, *args)
-        res = self.curs.fetchall()
+        self._curs.executemany(sql, *args)
+        res = self._curs.fetchall()
         return res or None
 
     def _sqlExecuteScript(self, script: str) -> None:
-        self.curs.executescript(script)
+        self._curs.executescript(script)
 
     def _sqlGetOne(self, sql: str, *args) -> tuple | None:
         res = self._sqlExecute(sql, *args)
@@ -74,13 +84,14 @@ class Database():
                 INSERT INTO files (path, size, dir_id) VALUES (?, ?, ?)
             """, (path, size, dir_id))
 
-    def _sqlUpdateDir(self, id, hash, dup_id=None) -> None:
+    def _sqlUpdateDir(self, id: int, hash: str | None = None, dup_id: int | None = None) -> None:
         self._sqlExecute("""--sql
-                UPDATE dirs
-                SET hash = ?, duplicate_id = ?
-                WHERE id = ?
-            """, (hash, dup_id, id))
-
+            UPDATE dirs
+            SET hash = COALESCE(?, hash),
+                duplicate_id = COALESCE(?, duplicate_id)
+            WHERE id = ?
+        """, (hash, dup_id, id))
+            
     def _sqlDirRemoveDupID(self, ids: Iterable[int]) -> None:
         ids = [(id, ) for id in ids]
         self._sqlExecuteMany("""--sql
@@ -88,9 +99,23 @@ class Database():
                 SET duplicate_id = NULL
                 WHERE id = ?
             """, ids)
+        
+    def _seqGetDulpFile(
+            self,
+            size: int,
+            hash: str | None = None,
+            hash_complete: str | None = None
+        ) -> tuple[int, str | None, int, str | None] | None:
+        res = self._sqlGetFirst("""--sql
+                SELECT id, path, dir_id, hash_complete, duplicate_id
+                FROM files
+                WHERE size = ? AND (hash = ? OR hash_complete = ?)
+                LIMIT 1
+            """, (size, hash, hash_complete))
+        return res
 
     def _lastRowID(self) -> int | None:
-        return self.curs.lastrowid
+        return self._curs.lastrowid
 
     def _dropAll(self) -> None:
         self._sqlExecuteScript("""--sql
@@ -110,14 +135,34 @@ class Database():
                 DELETE FROM duplicates WHERE id = ?;
             """, (id, ))
 
-    def _sqlGetDirsFromDupID(self, dup_id: Iterable[int]) -> list[int]:
+    def _sqlGetDirsFromDupID(self, dup_id: Iterable[int]) -> tuple[int]:
         res = self._sqlExecute("""--sql
                 SELECT id FROM dirs WHERE duplicate_id = ?
             """, (dup_id, ))
         return [id for (id, *_) in res]
+    
+    def _sqlFindDupDirFromHash(self, hash: str) -> tuple[int, int] | None:
+        res = self._sqlGetFirst("""--sql
+                SELECT id, duplicate_id FROM dirs WHERE hash = ?
+            """, (hash, ))
+        return res
+    
+    def _sqlUpdateFile(
+            self,
+            id: int, hash: str | None = None,
+            hash_complete: str | None = None,
+            dup_id: int | None = None
+        ) -> None:
+        self._sqlExecute("""--sql
+            UPDATE files
+            SET hash = COALESCE(?, hash),
+                hash_complete = COALESCE(?, hash_complete),
+                duplicate_id = COALESCE(?, duplicate_id)
+            WHERE id = ?
+        """, (hash, hash_complete, dup_id, id))
 
     @contextmanager
-    def transaction(self) -> None:
+    def _sqlTransaction(self) -> None:
         self._sqlStartTransaction()
         try:
             yield
@@ -182,12 +227,12 @@ class Database():
         '''Not SQL injection safe!'''
 
         print("\n----- " + f'Dumping table "{table}"' " -----\n" )
-        print(pd.read_sql_query(f"SELECT * FROM {table}", self.conn))
+        print(pd.read_sql_query(f"SELECT * FROM {table};", self._conn, index_col="id"))
         print("\n----- " + f'End of table "{table}"' " -----\n" )
 
     def setRootDir(self, root_path: str) -> None:
         self._sqlInsertDir(root_path, None, None)
-        self.rootDirID = self._lastRowID()
+        self._rootDirID = self._lastRowID()
         logger.info(f"Root dir set to {root_path}")
 
     def insertDir(self, path: str, parent_id: int, dup_id: int | None = None) -> int | None:
@@ -205,19 +250,16 @@ class Database():
         return self._lastRowID()
 
     def updateDirHash(self, id: int, hash: str) -> None:
-        res = self._sqlGetFirst("""--sql
-                SELECT hash, duplicate_id
-                FROM dirs
-                WHERE id = ?
-            """, (id, ))
 
-        old_hash, old_dup_id = res
+        old_hash, old_dup_id = self._sqlGetOne("""--sql
+                SELECT hash, duplicate_id FROM dirs WHERE id = ?
+            """, (id, ))
 
         # If hash has not changed, do nothing
         if old_hash == hash:
             return
 
-        with self.transaction():
+        with self._sqlTransaction():
             # If duplicate record exists for old hash, remove it
             if old_dup_id:
                 res = self._sqlGetDirsFromDupID(old_dup_id)
@@ -230,33 +272,19 @@ class Database():
                     self._sqlDirRemoveDupID((id, ))
 
             # Check if there is a duplicate folder
-            res = self._sqlGetFirst("""--sql
-                    SELECT id, duplicate_id
-                    FROM dirs
-                    WHERE hash = ?
-                    LIMIT 1
-                """, (hash, ))
-
-            dir_id, dup_id = res or (None, None)
+            dir_id, dup_id = self._sqlFindDupDirFromHash(hash) or (None, None)
 
             # Freshly detected duplicate folder
             if dir_id and (not dup_id):
                 dup_id = self._sqlInsertDuplicate("dir")
-
-                self._sqlExecute("""--sql
-                    UPDATE dirs
-                    SET duplicate_id = ?
-                    WHERE id = ?
-                """, (dup_id, dir_id))
+                self._sqlUpdateDir(dir_id, None, dup_id)
 
             self._sqlUpdateDir(id, hash, dup_id)
 
     def updateFileHash(self, id: int, hash: str, hash_complete: str | None = None) -> None:
         # Get file path and size 
         path, size = self._sqlGetOne("""--sql
-            SELECT path, size
-            FROM files
-            WHERE id = ?
+            SELECT path, size FROM files WHERE id = ?
         """, (id, ))
 
         # If file size < 1024, hash_complete will be set to the same value as hash
@@ -265,60 +293,30 @@ class Database():
 
         # For file bigger than 1024, first scan (partial hash)
         if not hash_complete:
-            res = self._sqlGetFirst("""--sql
-                SELECT id, path, dir_id, hash_complete
-                FROM files
-                WHERE hash = ? AND size = ?
-                LIMIT 1
-            """, (hash, size))
+            res = self._seqGetDulpFile(size, hash=hash)
 
             # If there is a match, throw exception to request a full hash
             if res:
-                res_id, res_path, res_dir_id, res_has_hash_complete = res
-                exception_str = (
-                    f'Partial hash collision detected! Between files:\n'
-                    f'"{res_path}",\n'
-                    f'"{path}"\n'
-                )
-                raise PartialHashCollision(exception_str, res_id, res_path, res_dir_id, bool(res_has_hash_complete))
+                res_id, res_path, res_dir_id, res_has_hash_complete, *_ = res
+                raise PartialHashCollision(path, res_id, res_path, res_dir_id, bool(res_has_hash_complete))
 
             # Simple file hash update if no match is found
             else:
-                self._sqlExecute("""--sql
-                    UPDATE files
-                    SET hash = ?
-                    WHERE id = ?
-                """, (hash, id))
+                self._sqlUpdateFile(id, hash=hash)
                 return
 
         # For file smaller than 1024, first scan (partial hash) or file bigger than 1024, second scan (full hash)
-        res = self._sqlGetFirst("""--sql
-                SELECT id, duplicate_id
-                FROM files
-                WHERE hash_complete = ? AND size = ?
-                LIMIT 1
-            """, (hash_complete, size))
-
-        file_id, dup_id = res or (None, None)
+        res = self._seqGetDulpFile(size, hash_complete=hash_complete)
+        file_id, *_ ,dup_id = res or (None, None)
 
         # Freshly detected duplicate, insert new row in "duplicates"
         # TODO: Add hash_complete column to duplicates
-        with self.transaction():
+        with self._sqlTransaction():
             if file_id and (not dup_id):
-                dup_id = self._sqlInsertDuplicate("file")
-
-                self._sqlExecute("""--sql
-                    UPDATE files
-                    SET duplicate_id = ?
-                    WHERE id = ?
-                """, (dup_id, file_id))
-
-            self._sqlExecute("""--sql
-                    UPDATE files
-                    SET hash = ?, hash_complete = ?, duplicate_id = ?
-                    WHERE id = ?
-                """, (hash, hash_complete, dup_id, id))
-
+                dup_id = self._sqlInsertDuplicate("file")            
+                self._sqlUpdateFile(file_id, dup_id=dup_id)
+    
+            self._sqlUpdateFile(id, hash=hash, hash_complete=hash_complete, dup_id=dup_id)
 
     def updateFileCompleteHash(self, id: int, hash_complete: str) -> None:
         self._sqlExecute("""--sql
@@ -387,5 +385,5 @@ class Database():
             yield entry
     
     def close(self) -> None:
-        self.curs.close()
-        self.conn.close()
+        self._curs.close()
+        self._conn.close()
