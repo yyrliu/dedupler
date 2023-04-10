@@ -47,7 +47,7 @@ class Database():
                 id INTEGER PRIMARY KEY,
                 path TEXT NOT NULL UNIQUE,
                 parent_dir INTEGER,
-                --depth INTEGER CHECK( depth >= 0 ),
+                depth INTEGER CHECK( depth >= 0 ),
                 hash TEXT,
                 duplicate_id INTEGER,
                 FOREIGN KEY(parent_dir) REFERENCES dirs(id)

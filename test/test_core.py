@@ -22,7 +22,7 @@ class TestBasebyDir(unittest.TestCase):
             self.assertEqual(getattr(dir, key), value)
         curs = self.db._conn.execute('SELECT * FROM dirs')
         self.assertDictEqual(curs.fetchone(), {
-            'id': 1, 'path': 'dir', 'parent_dir': None, 'hash': None, 'duplicate_id': None
+            'id': 1, 'path': 'dir', 'parent_dir': None, 'depth': 0, 'hash': None, 'duplicate_id': None
         })
 
     def test_get_dir_by_id(self):
@@ -89,11 +89,29 @@ class TestDir(unittest.TestCase):
         self.assertIsInstance(dir, core.Dir)
         for key, value in dirDict.items():
             self.assertEqual(getattr(dir, key), value)
-        # self.assertEqual(dir.depth, 0)
+        self.assertEqual(dir.id, 1)
+        self.assertEqual(dir.depth, 0)
         curs = self.db._conn.execute('SELECT * FROM dirs')
         self.assertDictEqual(curs.fetchone(), {
-            'id': 1, 'path': 'dir', 'parent_dir': None, 'hash': None, 'duplicate_id': None
+            'id': 1, 'path': 'dir', 'parent_dir': None, 'depth': 0, 'hash': None, 'duplicate_id': None
         })
+
+    def test_dir_depth(self):
+        dirDicts = {
+            1: { "path": "dir1", "parent_dir": None },
+            2: { "path": "dir1/dir2", "parent_dir": 1 },
+            3: { "path": "dir1/dir2/dir3", "parent_dir": 2 },
+            4: { "path": "dir1/dir2/dir4", "parent_dir": 2 },
+            5: { "path": "dir1/dir5", "parent_dir": 1 },
+            6: { "path": "dir1/dir5/dir6", "parent_dir": 5 },
+            7: { "path": "dir1/dir5/dir7", "parent_dir": 5 },
+            8: { "path": "dir1/dir5/dir6/dir8", "parent_dir": 6 }
+        }
+        for dirDict in dirDicts.values():
+            core.Dir.insert(dirDict, self.db._conn)
+        for dirId, dirDict in dirDicts.items():
+            dir = core.Dir.fromId(dirId, self.db._conn)
+            self.assertEqual(dir.depth, dirDict['path'].count('/'))
 
     def test_get_all_dirs_by_DFS(self):
         dirDicts = {
@@ -111,7 +129,6 @@ class TestDir(unittest.TestCase):
         dirsFromDB = core.Dir.getAllByDFS(self.db._conn)
         dfsIdsByDepth = [8, 3, 4, 6, 7, 2, 5, 1]
         self.assertEqual(dfsIdsByDepth, [ dir.id for dir in dirsFromDB ])
-        print(dirsFromDB[0])
 
     def test_get_files(self):
         dirDicts = [

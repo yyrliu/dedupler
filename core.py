@@ -42,11 +42,11 @@ class Base:
         """Inserts a new row into the database and returns the new instance"""
         if not isinstance(dbConn, Connection):
             raise ValueError("Database connection must be provided to insert new row")
+        # TODO: Make instance creation more elegant without creating new instance twice
         instance = cls(**payload)
         curs = dbConn.cursor()
         curs.execute(*instance._sqlInsertQuery())
-        instance.id = curs.lastrowid
-        return instance
+        return cls(**curs.fetchone())
 
     @classmethod
     def fromId(cls, id: int, dbConn: Connection) -> Self:
@@ -113,6 +113,7 @@ class Base:
         query = f"""--sql
             INSERT INTO {self.__class__.__name__.lower()}s
             ({', '.join(hasValue.keys())}) VALUES ({', '.join('?' * len(hasValue))})
+            RETURNING *
         """
         values = tuple(hasValue.values())
         return query, values
@@ -218,17 +219,18 @@ class Dir(Base):
         """
         return query, (self.id, )
     
-    # def _sqlInsertQuery(self) -> tuple[str, tuple]:
-    #     hasValue = { k: v for (k, v) in asdict(self).items() if v is not None }
-    #     query = f"""--sql
-    #         INSERT INTO {self.__class__.__name__.lower()}s
-    #         ({', '.join(hasValue.keys())}, depth)
-    #         VALUES
-    #         ({', '.join('?' * len(hasValue))} , COALESCE((SELECT depth FROM dirs WHERE id = ?), -1) + 1)
-    #     """
+    def _sqlInsertQuery(self) -> tuple[str, tuple]:
+        hasValue = { k: v for (k, v) in asdict(self).items() if v is not None }
+        query = f"""--sql
+            INSERT INTO {self.__class__.__name__.lower()}s
+            ({', '.join(hasValue.keys())}, depth)
+            VALUES
+            ({', '.join('?' * len(hasValue))} , COALESCE((SELECT depth FROM dirs WHERE id = ?), -1) + 1)
+            RETURNING *
+        """
 
-    #     values = tuple(hasValue.values()) + (self.parent_dir, )
-    #     return query, values
+        values = tuple(hasValue.values()) + (self.parent_dir, )
+        return query, values
 
 @dataclass(kw_only=True, slots=True)
 class Duplicate(Base):
