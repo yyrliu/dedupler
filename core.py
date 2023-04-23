@@ -46,7 +46,9 @@ class Base:
         instance = cls(**payload)
         curs = dbConn.cursor()
         curs.execute(*instance._sqlInsertQuery())
-        return cls(**curs.fetchone())
+        dbInstance = cls(**curs.fetchone())
+        logger.debug(f"Inserted new row into {cls.__name__.lower()}s: {dbInstance.__repr__()}")
+        return dbInstance
 
     @classmethod
     def fromId(cls, id: int, dbConn: Connection) -> Self:
@@ -232,8 +234,7 @@ class Dir(Base):
         values = tuple(hasValue.values()) + (self.parent_dir, )
         return query, values
 
-@dataclass(kw_only=True, slots=True)
+@dataclass(kw_only=True)
 class Duplicate(Base):
     type: str
     hash: str = None
-
