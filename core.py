@@ -29,9 +29,9 @@ class Base:
         self._deleted = False
 
     def __getattribute__(self, attr):
-        if attr != "__post_init__" and super().__getattribute__("_deleted"):
+        if not attr.startswith("__") and object.__getattribute__(self, "_deleted"):
             raise AttributeError(f"Cannot access deleted object")
-        return super().__getattribute__(attr)
+        return object.__getattribute__(self, attr)
 
     @classmethod
     def fieldNames(cls):
