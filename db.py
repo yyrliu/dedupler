@@ -82,14 +82,30 @@ class Database():
 
             COMMIT;
         """)
+        logger.info("Database initialized")
 
     def close(self) -> None:
         self._conn.close()
 
-    def dumpTable(self, table: str) -> None:
-        if table not in ['dirs', 'files', 'duplicates', 'photos']:
-            raise ValueError(f"Invalid table name: {table}")
+    def dumpTables(self, tables: list[str]) -> None:
+        query = """--sql
+            SELECT name FROM sqlite_schema
+            WHERE type='table'
+            ORDER BY name;
+        """
+        self._curs.execute(query)
+        self.tables = [row['name'] for row in self._curs.fetchall()]
         
+        if 'all' in tables:
+            for table in self.tables:
+                self._dumpTable(table)
+        else:
+            for table in tables:
+                if table not in self.tables:
+                    raise ValueError(f"Invalid table name: {table}")
+                self._dumpTable(table)
+
+    def _dumpTable(self, table: str) -> None:
         self._conn.row_factory = sqlite3.Row
         print("\n----- " + f'Dumping table "{table}"' " -----\n" )
         print(pd.read_sql_query(f"SELECT * FROM {table};", self._conn, index_col="id"))

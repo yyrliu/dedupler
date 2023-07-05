@@ -1,4 +1,5 @@
 import argparse
+from sqlite3 import Connection
 
 import core
 from scanner import Scanner
@@ -7,23 +8,29 @@ import db as DB
 
 
 def scan(args):
-    scanner = Scanner(db_path='./test/test.db')
+    print(f"Scanning: {args.path}")
+    scanner = Scanner(db_path=args.db)
     scanner.scan(args.path)
+    if args.tables:
+        dump_db(args, scanner.db)
 
 def hash(args):
+    print(f"Hashing: {args.db}")
     print(args)
 
-def print(args):
-    db = DB.Database('./test/test.db')
-    db.dumpTable("dirs")
-    db.dumpTable("files")
-    db.dumpTable("duplicates")
-    # rootDirs = core.Dir.getAllRootDirs(db._conn)
-    # for i in rootDirs:
-    #     print(core.Dir.getByParentDir(i.id, db._conn))
+def dump_db(args, db=None):
+    print(f"Printing: {args.db}")
+
+    if (db is None) or (not isinstance(db._conn, Connection)):
+        db = DB.Database('./test/test.db')
+
+    db.dumpTables(args.tables)
+    
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--db', type=str, help='path to database')
+    parser.add_argument('-p', '--print', type=str, action='append', dest='tables', help='print results')
     subparsers = parser.add_subparsers(help='Functions')
 
     parser_scan = subparsers.add_parser('scan', help='scan the given path')
@@ -34,7 +41,8 @@ def main():
     parser_hash.set_defaults(func=hash)
 
     parser_print = subparsers.add_parser('print', help='print the database')
-    parser_print.set_defaults(func=print)
+    parser_print.add_argument('tables', type=str, nargs='*', default='all', help='table to print')
+    parser_print.set_defaults(func=dump_db)
 
     args = parser.parse_args()
     args.func(args)
