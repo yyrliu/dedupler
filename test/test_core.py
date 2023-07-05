@@ -113,7 +113,23 @@ class TestDir(unittest.TestCase):
             dir = core.Dir.fromId(dirId, self.db._conn)
             self.assertEqual(dir.depth, dirDict['path'].count('/'))
 
-    def test_get_all_dirs_by_DFS(self):
+    def test_get_all_rootDirs(self):
+        dirDicts = {
+            1: { "path": "dir1", "parent_dir": None },
+            2: { "path": "dir1/dir2", "parent_dir": 1 },
+            3: { "path": "dir1/dir2/dir3", "parent_dir": 2 },
+            4: { "path": "dir1/dir2/dir4", "parent_dir": 2 },
+            5: { "path": "dir5", "parent_dir": None },
+            6: { "path": "dir5/dir6", "parent_dir": 5 },
+            7: { "path": "dir5/dir7", "parent_dir": 5 },
+            8: { "path": "dir5/dir6/dir8", "parent_dir": 6 }
+        }
+        for dirDict in dirDicts.values():
+            core.Dir.insert(dirDict, self.db._conn)
+        rootDirs = core.Dir.getAllRootDirs(self.db._conn)
+        self.assertEqual([1, 5], [ dir.id for dir in rootDirs ])
+
+    def test_get_childern_dirs_by_DFS(self):
         dirDicts = {
             1: { "path": "dir1", "parent_dir": None },
             2: { "path": "dir1/dir2", "parent_dir": 1 },
@@ -126,9 +142,10 @@ class TestDir(unittest.TestCase):
         }
         for dirDict in dirDicts.values():
             core.Dir.insert(dirDict, self.db._conn)
-        dirsFromDB = core.Dir.getAllByDFS(self.db._conn)
+        rootDir, *_ = core.Dir.getAllRootDirs(self.db._conn)
+        dirsinRootDir = rootDir.getChildenByDFS(self.db._conn)
         dfsIdsByDepth = [8, 3, 4, 6, 7, 2, 5, 1]
-        self.assertEqual(dfsIdsByDepth, [ dir.id for dir in dirsFromDB ])
+        self.assertEqual(dfsIdsByDepth, [ dir.id for dir in dirsinRootDir ])
 
     def test_get_files(self):
         dirDicts = [

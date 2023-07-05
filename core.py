@@ -184,12 +184,11 @@ class Dir(Base):
     hash: str = None
     duplicate_id: int = None
 
-    @classmethod
-    def _sqlGetAllByDFSQuery(cls) -> str:
-        return """--sql
+    def _sqlGetChildenByDFSQuery(self) -> tuple[str, tuple]:
+        query = """--sql
             WITH RECURSIVE cte (id, parent_dir, depth, path) AS (
                 SELECT id, parent_dir, 1, path
-                FROM dirs WHERE parent_dir IS NULL
+                FROM dirs WHERE id = ?
                 UNION ALL
                 SELECT dirs.id, dirs.parent_dir, cte.depth + 1 AS depth, dirs.path 
                 FROM dirs JOIN cte ON dirs.parent_dir = cte.id
@@ -197,15 +196,31 @@ class Dir(Base):
             )
             SELECT * FROM cte ORDER BY depth DESC;
         """
+        values = (self.id, )
+        return query, values
     
     @classmethod
-    def getAllByDFS(cls, dbConn: Connection) -> tuple[Self]:
-        """Returns all dirs in the database in DFS order sorted by depth (deepest first)"""
+    def _sqlGetAllRootDirsQuery(cls) -> str:
+        return """--sql
+                SELECT * FROM dirs WHERE parent_dir IS NULL
+            """
+    
+    @classmethod
+    def getAllRootDirs(cls, dbConn: Connection) -> tuple[Self]:
+        """Returns all root dirs in the database"""
         if not isinstance(dbConn, Connection):
-            raise ValueError("Database connection must be provided to retrieve all dirs by DFS")
+            raise ValueError("Database connection must be provided to retrieve all root dirs")
         curs = dbConn.cursor()
-        curs.execute(cls._sqlGetAllByDFSQuery())
+        curs.execute(cls._sqlGetAllRootDirsQuery())
         return tuple(cls(**row) for row in curs.fetchall())
+    
+    def getChildenByDFS(self, dbConn: Connection) -> tuple[Self]:
+        """Returns all dirs in the directory in DFS order sorted by depth (deepest first)"""
+        if not isinstance(dbConn, Connection):
+            raise ValueError("Database connection must be provided to retrieve dirs by DFS")
+        curs = dbConn.cursor()
+        curs.execute(*self._sqlGetChildenByDFSQuery())
+        return tuple(self.__class__(**row) for row in curs.fetchall())
     
     def getFiles(self, dbConn: Connection) -> tuple[File]:
         """Returns all files in the directory"""
