@@ -4,13 +4,22 @@ from pathlib import Path
 from collections.abc import Iterable, Generator
 import pandas as pd
 from contextlib import contextmanager
+import json
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 def dict_factory(cursor, row):
     fields = [column[0] for column in cursor.description]
-    return { key: value for key, value in zip(fields, row) }
+    
+    to_return = dict()
+    for field, value in zip(fields, row):
+        if field.endswith('_json'):
+            to_return[field] = json.loads(value)
+        else:
+            to_return[field] = value
+
+    return to_return
 
 class Database():
     # TODO: Move SQL statements to a separate file
@@ -43,6 +52,14 @@ class Database():
                 FOREIGN KEY(parent_dir) REFERENCES dirs(id)
             );
 
+            CREATE TABLE photos (
+                id INTEGER PRIMARY KEY,
+                file INTEGER,
+                image_hash TEXT NOT NULL,
+                data_json TEXT,
+                FOREIGN KEY(file) REFERENCES files(id)
+            );
+
             CREATE TABLE dirs (
                 id INTEGER PRIMARY KEY,
                 path TEXT NOT NULL UNIQUE,
@@ -58,6 +75,8 @@ class Database():
             CREATE INDEX idx_files_hash ON files (hash);
             CREATE INDEX idx_files_duplicate_id ON files (duplicate_id);
             CREATE INDEX idx_files_complete_hash ON files (complete_hash);
+            CREATE INDEX idx_photos_file_id ON photos (file);
+            CREATE INDEX idx_photos_image_hash ON photos (image_hash);
             CREATE INDEX idx_dirs_hash ON dirs (hash);
             CREATE INDEX idx_dirs_duplicate_id ON dirs (duplicate_id);
 

@@ -1,7 +1,8 @@
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, field
 from typing import Self
 from sqlite3 import Connection
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -38,7 +39,7 @@ class Base:
         return tuple(field.name for field in fields(cls))
     
     @classmethod
-    def insert(cls, payload: dict, dbConn: Connection):
+    def insert(cls, payload: dict, dbConn: Connection, returnAsInstance: bool = True):
         """Inserts a new row into the database and returns the new instance"""
         if not isinstance(dbConn, Connection):
             raise ValueError("Database connection must be provided to insert new row")
@@ -46,10 +47,13 @@ class Base:
         instance = cls(**payload)
         curs = dbConn.cursor()
         curs.execute(*instance._sqlInsertQuery())
-        dbInstance = cls(**curs.fetchone())
-        logger.debug(f"Inserted new row into {cls.__name__.lower()}s: {dbInstance.__repr__()}")
-        return dbInstance
-
+        if returnAsInstance:
+            dbInstance = cls(**curs.fetchone())
+            logger.debug(f"Inserted new row into {cls.__name__.lower()}s: {dbInstance.__repr__()}")
+            return dbInstance
+        else:
+            return curs.fetchone()
+    
     @classmethod
     def fromId(cls, id: int, dbConn: Connection) -> Self:
         """Returns an instance of the class with the given id"""
@@ -111,13 +115,20 @@ class Base:
         self._deleted = True
             
     def _sqlInsertQuery(self) -> tuple[str, tuple]:
-        hasValue = { k: v for (k, v) in asdict(self).items() if v is not None }
+        dictToInsert = dict()
+        for (k, v) in asdict(self).items():
+            if v is not None:
+                if k.endswith('_json'):
+                    dictToInsert[k] = json.dumps(v)
+                else:
+                    dictToInsert[k] = v
+
         query = f"""--sql
             INSERT INTO {self.__class__.__name__.lower()}s
-            ({', '.join(hasValue.keys())}) VALUES ({', '.join('?' * len(hasValue))})
+            ({', '.join(dictToInsert.keys())}) VALUES ({', '.join('?' * len(dictToInsert))})
             RETURNING *
         """
-        values = tuple(hasValue.values())
+        values = tuple(dictToInsert.values())
         return query, values
     
     def _sqlUpdateQuery(self) -> tuple[str, tuple]:
@@ -175,6 +186,12 @@ class File(Base):
             raise ValueError("parent_dir is required to insert a new row")
         
         return super().insert(payload, dbConn)
+    
+@dataclass(kw_only=True)
+class Photo(Base):
+    file: int
+    image_hash: str = None
+    data_json: dict = field(default_factory=dict)
 
 @dataclass(kw_only=True)
 class Dir(Base):

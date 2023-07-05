@@ -213,3 +213,28 @@ class TestFile(unittest.TestCase):
         fileFromDB = core.File.fromId(file.id, self.db._conn)
         self.assertEqual(fileFromDB.hash, 'hash')
         self.assertEqual(fileFromDB.complete_hash, None)
+
+class TestPhoto(unittest.TestCase):
+    """Test Photo class"""
+    def setUp(self):
+        self.db = DB.Database(':memory:')
+        self.db.initialize()
+        dirDict = { "path": "dir", "parent_dir": None }
+        self.rootDir = core.Dir.insert(dirDict, self.db._conn)
+        fileDict = { "path": "dir/file", "size": 10, "parent_dir": self.rootDir.id }
+        self.file = core.File.insert(fileDict, self.db._conn)
+
+    def tearDown(self):
+        self.db.close()
+
+    def test_insert_photo(self):
+        data = { "text": "text value", "number": 123 }
+        photoDict = { "file": self.file.id, "image_hash": "image_hash", "data_json": data }
+        photo = core.Photo.insert(photoDict, self.db._conn)
+        self.assertIsInstance(photo, core.Photo)
+        for key, value in photoDict.items():
+            self.assertEqual(getattr(photo, key), value)
+        curs = self.db._conn.execute('SELECT * FROM photos')
+        self.assertDictEqual(curs.fetchone(), {
+            'id': 1, 'file': self.file.id, 'image_hash': 'image_hash', 'data_json': data
+        })
