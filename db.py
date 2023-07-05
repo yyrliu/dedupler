@@ -11,7 +11,7 @@ logger.setLevel(logging.DEBUG)
 
 def dict_factory(cursor, row):
     fields = [column[0] for column in cursor.description]
-    
+
     to_return = dict()
     for field, value in zip(fields, row):
         if field.endswith('_json'):
@@ -85,3 +85,13 @@ class Database():
 
     def close(self) -> None:
         self._conn.close()
+
+    def dumpTable(self, table: str) -> None:
+        if table not in ['dirs', 'files', 'duplicates', 'photos']:
+            raise ValueError(f"Invalid table name: {table}")
+        
+        self._conn.row_factory = sqlite3.Row
+        print("\n----- " + f'Dumping table "{table}"' " -----\n" )
+        print(pd.read_sql_query(f"SELECT * FROM {table};", self._conn, index_col="id"))
+        print("\n----- " + f'End of table "{table}"' " -----\n" )
+        self._conn.row_factory = dict_factory
