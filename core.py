@@ -1,8 +1,11 @@
 from dataclasses import asdict, dataclass, fields, field
 from typing import Self
-from sqlite3 import Connection
+from collections.abc import Iterable, Generator, Callable
 import logging
 import json
+
+
+from db import Database
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -39,44 +42,47 @@ class Base:
         return tuple(field.name for field in fields(cls))
     
     @classmethod
-    def insert(cls, payload: dict, dbConn: Connection, returnAsInstance: bool = True):
+    def insert(cls, payload: dict, db: Database, returnAsInstance: bool = True):
         """Inserts a new row into the database and returns the new instance"""
-        if not isinstance(dbConn, Connection):
+        if not isinstance(db, Database):
             raise ValueError("Database connection must be provided to insert new row")
         # TODO: Make instance creation more elegant without creating new instance twice
         instance = cls(**payload)
-        curs = dbConn.cursor()
-        curs.execute(*instance._sqlInsertQuery())
-        if returnAsInstance:
-            dbInstance = cls(**curs.fetchone())
-            logger.debug(f"Inserted new row into {cls.__name__.lower()}s: {dbInstance.__repr__()}")
-            return dbInstance
-        else:
-            return curs.fetchone()
+
+        with db.query() as curs:
+            curs.execute(*instance._sqlInsertQuery())
+            if returnAsInstance:
+                dbInstance = cls(**curs.fetchone())
+                logger.debug(f"Inserted new row into {cls.__name__.lower()}s: {dbInstance.__repr__()}")
+                return dbInstance
+            else:
+                return curs.fetchone()
     
     @classmethod
-    def fromId(cls, id: int, dbConn: Connection) -> Self:
+    def fromId(cls, id: int, db: Database) -> Self:
         """Returns an instance of the class with the given id"""
-        if not isinstance(dbConn, Connection):
+        if not isinstance(db, Database):
             raise ValueError("Database connection must be provided to retrieve from id")
         query = f"""--sql
             SELECT * FROM {cls.__name__.lower()}s WHERE id = ?
         """
-        curs = dbConn.cursor()
-        curs.execute(query, (id, ))
-        return cls(**curs.fetchone())
+        with db.query() as curs:
+            curs.execute(query, (id, ))
+            return cls(**curs.fetchone())
     
     @classmethod
-    def getByParentDir(cls, parentDir: int, dbConn: Connection) -> tuple[Self]:
+    def getByParentDir(cls, parentDir: int, db: Database) -> tuple[Self]:
         """Returns all instances of the class with the given parentDir"""
-        if not isinstance(dbConn, Connection):
+        if not isinstance(db, Database):
             raise ValueError("Database connection must be provided to retrieve from parent_dir")
-        curs = dbConn.cursor()
+        
         query = cls._sqlGetByForeignKeyQuery(parent_dir=parentDir)
         logging.info(f"query={query}")
-        curs.execute(*query)
-        # curs.execute(*cls._sqlGetByForeignKeyQuery(parent_dir=parentDir))
-        return tuple(cls(**row) for row in curs.fetchall())
+        
+        with db.query() as curs:
+            curs.execute(*query)
+            # curs.execute(*cls._sqlGetByForeignKeyQuery(parent_dir=parentDir))
+            return tuple(cls(**row) for row in curs.fetchall())
     
     @classmethod
     def sqlDumpTableQuery(cls) -> str:
@@ -97,21 +103,25 @@ class Base:
         """Updates the value of the given attributes"""
         self.__update(**kwargs)
 
-    def update(self, dbConn: Connection, **kwargs):
+    def update(self, db: Database, **kwargs):
         """Updates the value of the given attributes and syncs with database"""
-        if not isinstance(dbConn, Connection):
+        if not isinstance(db, Database):
             raise ValueError("Database connection must be provided to update")
         self.__update(**kwargs)
-        curs = dbConn.cursor()
-        curs.execute(*self._sqlUpdateQuery())
+
+        with db.query() as curs:
+            curs.execute(*self._sqlUpdateQuery())
+
         self._clearUpdatedSet()
 
-    def delete(self, dbConn: Connection):
+    def delete(self, db: Database):
         """Deletes the row from the database"""
-        if not isinstance(dbConn, Connection):
+        if not isinstance(db, Database):
             raise ValueError("Database connection must be provided to delete")
-        curs = dbConn.cursor()
-        curs.execute(*self._sqlDeleteQuery())
+        
+        with db.query() as curs:
+            curs.execute(*self._sqlDeleteQuery())
+
         self._deleted = True
             
     def _sqlInsertQuery(self) -> tuple[str, tuple]:
@@ -181,11 +191,11 @@ class File(Base):
     duplicate_id: int = None
 
     @classmethod
-    def insert(cls, payload: dict, dbConn: Connection):
+    def insert(cls, payload: dict, db: Database):
         if "parent_dir" not in payload or payload ["parent_dir"] is None:
             raise ValueError("parent_dir is required to insert a new row")
         
-        return super().insert(payload, dbConn)
+        return super().insert(payload, db)
     
 @dataclass(kw_only=True)
 class Photo(Base):
@@ -223,29 +233,46 @@ class Dir(Base):
             """
     
     @classmethod
-    def getAllRootDirs(cls, dbConn: Connection) -> tuple[Self]:
+    def getAllRootDirs(cls, db: Database) -> tuple[Self]:
         """Returns all root dirs in the database"""
-        if not isinstance(dbConn, Connection):
+        if not isinstance(db, Database):
             raise ValueError("Database connection must be provided to retrieve all root dirs")
-        curs = dbConn.cursor()
-        curs.execute(cls._sqlGetAllRootDirsQuery())
-        return tuple(cls(**row) for row in curs.fetchall())
+        with db.query() as curs:
+            curs.execute(cls._sqlGetAllRootDirsQuery())
+            return tuple(cls(**row) for row in curs.fetchall())
     
-    def getChildenByDFS(self, dbConn: Connection) -> tuple[Self]:
+    def getChildenByDFS(self, db: Database) -> tuple[Self]:
         """Returns all dirs in the directory in DFS order sorted by depth (deepest first)"""
-        if not isinstance(dbConn, Connection):
+        if not isinstance(db, Database):
             raise ValueError("Database connection must be provided to retrieve dirs by DFS")
-        curs = dbConn.cursor()
-        curs.execute(*self._sqlGetChildenByDFSQuery())
-        return tuple(self.__class__(**row) for row in curs.fetchall())
+        with db.query() as curs:
+            curs.execute(*self._sqlGetChildenByDFSQuery())
+            return tuple(self.__class__(**row) for row in curs.fetchall())
     
-    def getFiles(self, dbConn: Connection) -> tuple[File]:
+    def getFiles(self, db: Database, get_len_cb: callable = None) -> Generator[File, None, None]:
         """Returns all files in the directory"""
-        if not isinstance(dbConn, Connection):
+        if not isinstance(db, Database):
             raise ValueError("Database connection must be provided to retrieve files")
-        curs = dbConn.cursor()
-        curs.execute(*self._sqlGetFilesQuery())
-        return tuple(File(**row) for row in curs.fetchall())
+        
+        with db.query() as curs:
+            if get_len_cb is not None:
+                curs.execute(*self._sqlGetLen(*self._sqlGetFilesQuery()))
+                get_len_cb(curs.fetchone()['length'])
+
+            curs.execute(*self._sqlGetFilesQuery())
+
+            while True:
+                try:
+                    yield File(**next(curs))
+                except StopIteration:
+                    break
+
+
+    def _sqlGetLen(self, query: str, *args) -> tuple[str, tuple]:
+        getLenQuery = f"""--sql
+            SELECT COUNT(*) AS length FROM ({query})
+        """
+        return getLenQuery, *args
 
     def _sqlGetFilesQuery(self) -> tuple[str, tuple]:
         query = f"""--sql

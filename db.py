@@ -1,7 +1,7 @@
 import sqlite3
 import logging
 from pathlib import Path
-from collections.abc import Iterable, Generator
+from collections.abc import Iterable, Generator, Callable
 import pandas as pd
 from contextlib import contextmanager
 import json
@@ -28,6 +28,38 @@ class Database():
         self._conn = sqlite3.connect(db_path, isolation_level=None)
         self._conn.row_factory = dict_factory
         self._curs = self._conn.cursor()
+
+    @contextmanager
+    def query(self) -> Generator[sqlite3.Cursor, None, None]:
+        cursor = self._conn.cursor()
+        logger.debug("Cursor created.")
+        cursor.execute("BEGIN;")
+        logger.debug("Transaction begin.")
+        try:
+            yield cursor
+        except sqlite3.Error as e:
+        # except Exception as e:
+            logger.error(f"Transaction failed: {e}", exc_info=True)
+            self.rollback(cursor)
+            raise
+        else:
+            logger.info(f"Transaction committed successfully.")
+            cursor.execute("COMMIT;")
+        finally:
+            if self._conn.in_transaction:
+                logger.warning("Transaction is still active, rolling back...")
+                self.rollback(cursor)
+            logger.debug("Closing cursor.")
+            cursor.close()
+
+    def rollback(self, cursor: sqlite3.Cursor):
+        try:
+            logger.info(f"Trying to rowback transaction...")
+            cursor.execute("ROLLBACK;")
+        except sqlite3.OperationalError as e:
+            logger.info(f"Rowback failed: {e}. The transaction may has already been rolled back automatically by the error response.", exc_info=True)
+        else:
+            logger.info(f"Transaction rolled back successfully.")
 
     def initialize(self) -> None:
         # cursor.executescript implicitly commit any pending transactions, cannot execute "BEGIN TRANSACTION" here.
