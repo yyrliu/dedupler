@@ -1,6 +1,8 @@
 from dataclasses import asdict, dataclass, fields, field
 from typing import Self
 from collections.abc import Iterable, Generator, Callable
+from contextlib import contextmanager
+from sqlite3 import Cursor
 import logging
 import json
 
@@ -228,47 +230,55 @@ class Dir(Base):
     
     @classmethod
     def _sqlGetAllRootDirsQuery(cls) -> str:
-        return """--sql
+        return ("""--sql
                 SELECT * FROM dirs WHERE parent_dir IS NULL
-            """
+            """, )
     
     @classmethod
+    @contextmanager
     def getAllRootDirs(cls, db: Database) -> tuple[Self]:
         """Returns all root dirs in the database"""
         if not isinstance(db, Database):
             raise ValueError("Database connection must be provided to retrieve all root dirs")
         with db.query() as curs:
-            curs.execute(cls._sqlGetAllRootDirsQuery())
-            return tuple(cls(**row) for row in curs.fetchall())
+            query = cls._sqlGetAllRootDirsQuery()
+            length = cls.getLen(curs, *query)
+            curs.execute(*query)
+            yield CursorIterator(curs, length, cls)
     
+    @contextmanager
     def getChildenByDFS(self, db: Database) -> tuple[Self]:
         """Returns all dirs in the directory in DFS order sorted by depth (deepest first)"""
         if not isinstance(db, Database):
             raise ValueError("Database connection must be provided to retrieve dirs by DFS")
+        
         with db.query() as curs:
-            curs.execute(*self._sqlGetChildenByDFSQuery())
-            return tuple(self.__class__(**row) for row in curs.fetchall())
+            query = self._sqlGetChildenByDFSQuery()
+            length = self.getLen(curs, *query)
+            curs.execute(*query)
+            yield CursorIterator(curs, length, self.__class__)
     
-    def getFiles(self, db: Database, get_len_cb: callable = None) -> Generator[File, None, None]:
+    @contextmanager
+    def getFiles(self, db: Database):
         """Returns all files in the directory"""
         if not isinstance(db, Database):
             raise ValueError("Database connection must be provided to retrieve files")
         
         with db.query() as curs:
-            if get_len_cb is not None:
-                curs.execute(*self._sqlGetLen(*self._sqlGetFilesQuery()))
-                get_len_cb(curs.fetchone()['length'])
+            query = self._sqlGetFilesQuery()
+            length = self.getLen(curs, *query)
+            curs.execute(*query)
+            yield CursorIterator(curs, length, File)
 
-            curs.execute(*self._sqlGetFilesQuery())
+    @classmethod
+    def getLen(cls, cursor: Cursor, *query) -> int:
+        """Returns the length of the query"""
+        cursor.execute(*cls._sqlGetLen(*query))
+        return cursor.fetchone()['length']
 
-            while True:
-                try:
-                    yield File(**next(curs))
-                except StopIteration:
-                    break
-
-
-    def _sqlGetLen(self, query: str, *args) -> tuple[str, tuple]:
+    @classmethod
+    def _sqlGetLen(cls, query: str, *args) -> tuple[str, tuple]:
+        query = query.rstrip().rstrip(';')
         getLenQuery = f"""--sql
             SELECT COUNT(*) AS length FROM ({query})
         """
@@ -293,6 +303,23 @@ class Dir(Base):
         values = tuple(hasValue.values()) + (self.parent_dir, )
         return query, values
 
+class CursorIterator():
+    def __init__(self, curs: Cursor, length: int, yield_type: object | None = None):
+        self.curs = curs
+        self.yield_type = yield_type
+        self.length = length
+
+    def __iter__(self):
+        return self
+    
+    def __next__(self):
+        if self.yield_type is None:
+            return next(self.curs)
+        return self.yield_type(**next(self.curs))
+        
+    def __len__(self):
+        return self.length
+    
 @dataclass(kw_only=True)
 class Duplicate(Base):
     type: str

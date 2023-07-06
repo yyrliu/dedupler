@@ -135,8 +135,10 @@ class TestDir(unittest.TestCase):
         }
         for dirDict in dirDicts.values():
             core.Dir.insert(dirDict, self.db)
-        rootDirs = core.Dir.getAllRootDirs(self.db)
-        self.assertEqual([1, 5], [ dir.id for dir in rootDirs ])
+
+        with core.Dir.getAllRootDirs(self.db) as rootDirsIter:
+            rootDirs = [ dir.id for dir in rootDirsIter ]
+            self.assertEqual([1, 5], rootDirs)
 
     def test_get_childern_dirs_by_DFS(self):
         dirDicts = {
@@ -151,10 +153,14 @@ class TestDir(unittest.TestCase):
         }
         for dirDict in dirDicts.values():
             core.Dir.insert(dirDict, self.db)
-        rootDir, *_ = core.Dir.getAllRootDirs(self.db)
-        dirsinRootDir = rootDir.getChildenByDFS(self.db)
-        dfsIdsByDepth = [8, 3, 4, 6, 7, 2, 5, 1]
-        self.assertEqual(dfsIdsByDepth, [ dir.id for dir in dirsinRootDir ])
+
+        with core.Dir.getAllRootDirs(self.db) as rootDirsIter:
+            rootDir, *_ = list(rootDirsIter)
+            
+        with rootDir.getChildenByDFS(self.db) as dirIter:
+            dfsIdsByDepth = [8, 3, 4, 6, 7, 2, 5, 1]
+            self.assertEqual(len(dirIter), len(dfsIdsByDepth))
+            self.assertEqual(dfsIdsByDepth, [ dir.id for dir in dirIter ])
 
     def test_get_files(self):
         dirDicts = [
@@ -176,10 +182,9 @@ class TestDir(unittest.TestCase):
         files = { 1: [1], 2: [2], 3: [3, 4] }
 
         for dir in dirs:
-            dirFilesIter = dir.getFiles(self.db, print)
-            dirFiles = list(dirFilesIter)
-            # self.assertEqual(len(dirFilesIter), len(files[dir.id]))
-            self.assertEqual(files[dir.id], [dirFiles.id for dirFiles in dirFiles])
+            with dir.getFiles(self.db) as dirFilesIter:
+                self.assertEqual(len(dirFilesIter), len(files[dir.id]))
+                self.assertEqual(files[dir.id], [dirFiles.id for dirFiles in dirFilesIter])
 
 class TestFile(unittest.TestCase):
     """Test File class"""
