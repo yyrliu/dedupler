@@ -100,7 +100,50 @@ class Base:
                 setattr(self, key, value)
             else:
                 raise ValueError(f"Invalid field name {key}, attribute not found in {self.__class__.__name__}")
-            
+
+    @classmethod
+    def getLen(cls, cursor: Cursor, *query) -> int:
+        """Returns the length of the query"""
+        cursor.execute(*cls._sqlGetLen(*query))
+        return cursor.fetchone()['length']
+
+    @classmethod
+    def _sqlGetLen(cls, query: str, *args) -> tuple[str, tuple]:
+        query = query.rstrip().rstrip(';')
+        getLenQuery = f"""--sql
+            SELECT COUNT(*) AS length FROM ({query})
+        """
+        return getLenQuery, *args
+    
+    @classmethod
+    def queryFuncSelector(cls, db: Database, as_iter: bool = True):
+
+        # iterQuery should always be used with contextlib.close() to prevent unclosed transaction
+        def iterQuery(query: tuple, as_instance_of: object | None = None, count: bool = True):
+            with db.query() as curs:
+                # if count is True, the first yield will be the length of the query
+                if count:
+                    length = cls.getLen(curs, *query)
+                    yield length
+                curs.execute(*query)
+                if as_instance_of is not None:
+                    yield from (as_instance_of(**row) for row in curs)
+                else:
+                    yield from (row for row in curs)
+        
+        def tupleQuery(query: tuple, as_instance_of: object | None = None, **kwargs):
+            with db.query() as curs:
+                curs.execute(*query)
+                if as_instance_of is not None:
+                    return tuple(as_instance_of(**row) for row in curs.fetchall())
+                else:
+                    return tuple(row for row in curs.fetchall())
+
+        if as_iter:
+            return iterQuery
+        else:
+            return tupleQuery
+
     def updateValue(self, **kwargs):
         """Updates the value of the given attributes"""
         self.__update(**kwargs)
@@ -235,54 +278,32 @@ class Dir(Base):
             """, )
     
     @classmethod
-    @contextmanager
-    def getAllRootDirs(cls, db: Database) -> tuple[Self]:
+    def getAllRootDirs(cls, db: Database, as_iter: bool = False, count: bool = True, as_instance: bool = True) -> tuple[Self]:
         """Returns all root dirs in the database"""
         if not isinstance(db, Database):
             raise ValueError("Database connection must be provided to retrieve all root dirs")
-        with db.query() as curs:
-            query = cls._sqlGetAllRootDirsQuery()
-            length = cls.getLen(curs, *query)
-            curs.execute(*query)
-            yield CursorIterator(curs, length, cls)
+        
+        query = cls._sqlGetAllRootDirsQuery()
+        query_func = cls.queryFuncSelector(db, as_iter=as_iter)
+        return query_func(query, cls if as_instance else None, count=count)
     
-    @contextmanager
-    def getChildenByDFS(self, db: Database) -> tuple[Self]:
+    def getChildenByDFS(self, db: Database, as_iter: bool = False, count: bool = True, as_instance: bool = True) -> tuple[Self]:
         """Returns all dirs in the directory in DFS order sorted by depth (deepest first)"""
         if not isinstance(db, Database):
             raise ValueError("Database connection must be provided to retrieve dirs by DFS")
         
-        with db.query() as curs:
-            query = self._sqlGetChildenByDFSQuery()
-            length = self.getLen(curs, *query)
-            curs.execute(*query)
-            yield CursorIterator(curs, length, self.__class__)
+        query = self._sqlGetChildenByDFSQuery()
+        query_func = self.queryFuncSelector(db, as_iter=as_iter)
+        return query_func(query, self.__class__ if as_instance else None, count=count)
     
-    @contextmanager
-    def getFiles(self, db: Database):
+    def getFiles(self, db: Database, as_iter: bool = False, count: bool = True, as_instance: bool = True):
         """Returns all files in the directory"""
         if not isinstance(db, Database):
             raise ValueError("Database connection must be provided to retrieve files")
         
-        with db.query() as curs:
-            query = self._sqlGetFilesQuery()
-            length = self.getLen(curs, *query)
-            curs.execute(*query)
-            yield CursorIterator(curs, length, File)
-
-    @classmethod
-    def getLen(cls, cursor: Cursor, *query) -> int:
-        """Returns the length of the query"""
-        cursor.execute(*cls._sqlGetLen(*query))
-        return cursor.fetchone()['length']
-
-    @classmethod
-    def _sqlGetLen(cls, query: str, *args) -> tuple[str, tuple]:
-        query = query.rstrip().rstrip(';')
-        getLenQuery = f"""--sql
-            SELECT COUNT(*) AS length FROM ({query})
-        """
-        return getLenQuery, *args
+        query = self._sqlGetFilesQuery()
+        query_func = self.queryFuncSelector(db, as_iter=as_iter)
+        return query_func(query, File if as_instance else None, count=count)
 
     def _sqlGetFilesQuery(self) -> tuple[str, tuple]:
         query = f"""--sql

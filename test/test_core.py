@@ -3,6 +3,7 @@ import logging
 import core
 import db as DB
 from sqlite3 import IntegrityError
+from contextlib import closing
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s: %(name)s [%(levelname)s] %(message)s')
 
@@ -122,7 +123,7 @@ class TestDir(unittest.TestCase):
             dir = core.Dir.fromId(dirId, self.db)
             self.assertEqual(dir.depth, dirDict['path'].count('/'))
 
-    def test_get_all_rootDirs(self):
+    def test_get_all_rootDirs_as_tuple(self):
         dirDicts = {
             1: { "path": "dir1", "parent_dir": None },
             2: { "path": "dir1/dir2", "parent_dir": 1 },
@@ -136,9 +137,34 @@ class TestDir(unittest.TestCase):
         for dirDict in dirDicts.values():
             core.Dir.insert(dirDict, self.db)
 
-        with core.Dir.getAllRootDirs(self.db) as rootDirsIter:
-            rootDirs = [ dir.id for dir in rootDirsIter ]
-            self.assertEqual([1, 5], rootDirs)
+        rootDirs = core.Dir.getAllRootDirs(self.db)
+        self.assertEqual([1, 5], [ dir.id for dir in rootDirs ])
+        rootDirs = core.Dir.getAllRootDirs(self.db, as_instance=None)
+        self.assertEqual([1, 5], [ dir['id'] for dir in rootDirs ])
+
+    def test_get_all_rootDirs_as_iter(self):
+        dirDicts = {
+            1: { "path": "dir1", "parent_dir": None },
+            2: { "path": "dir1/dir2", "parent_dir": 1 },
+            3: { "path": "dir1/dir2/dir3", "parent_dir": 2 },
+            4: { "path": "dir1/dir2/dir4", "parent_dir": 2 },
+            5: { "path": "dir5", "parent_dir": None },
+            6: { "path": "dir5/dir6", "parent_dir": 5 },
+            7: { "path": "dir5/dir7", "parent_dir": 5 },
+            8: { "path": "dir5/dir6/dir8", "parent_dir": 6 }
+        }
+        for dirDict in dirDicts.values():
+            core.Dir.insert(dirDict, self.db)
+
+        dirIter = core.Dir.getAllRootDirs(self.db, as_iter=True)
+        length = next(dirIter)
+        rootDirs = [ dir.id for dir in dirIter ]
+        self.assertEqual(len([1, 5]), length)
+        self.assertEqual([1, 5], rootDirs)
+
+        dirIter = core.Dir.getAllRootDirs(self.db, as_iter=True, as_instance=None, count=False)
+        rootDirs = [ dir['id'] for dir in dirIter ]
+        self.assertEqual([1, 5], rootDirs)
 
     def test_get_childern_dirs_by_DFS(self):
         dirDicts = {
@@ -151,16 +177,20 @@ class TestDir(unittest.TestCase):
             7: { "path": "dir1/dir5/dir7", "parent_dir": 5 },
             8: { "path": "dir1/dir5/dir6/dir8", "parent_dir": 6 }
         }
+
+        dfsIdsByDepth = [8, 3, 4, 6, 7, 2, 5, 1]
+
         for dirDict in dirDicts.values():
             core.Dir.insert(dirDict, self.db)
 
-        with core.Dir.getAllRootDirs(self.db) as rootDirsIter:
-            rootDir, *_ = list(rootDirsIter)
-            
-        with rootDir.getChildenByDFS(self.db) as dirIter:
-            dfsIdsByDepth = [8, 3, 4, 6, 7, 2, 5, 1]
-            self.assertEqual(len(dirIter), len(dfsIdsByDepth))
-            self.assertEqual(dfsIdsByDepth, [ dir.id for dir in dirIter ])
+        rootDir, *_ = core.Dir.getAllRootDirs(self.db)
+
+        with closing(rootDir.getChildenByDFS(self.db, as_iter=True)) as dirIter:
+            length = next(dirIter)
+            self.assertEqual(length, len(dfsIdsByDepth))
+
+        dirs = rootDir.getChildenByDFS(self.db)
+        self.assertEqual(dfsIdsByDepth, [ dir.id for dir in dirs ])
 
     def test_get_files(self):
         dirDicts = [
@@ -182,9 +212,11 @@ class TestDir(unittest.TestCase):
         files = { 1: [1], 2: [2], 3: [3, 4] }
 
         for dir in dirs:
-            with dir.getFiles(self.db) as dirFilesIter:
-                self.assertEqual(len(dirFilesIter), len(files[dir.id]))
-                self.assertEqual(files[dir.id], [dirFiles.id for dirFiles in dirFilesIter])
+            with closing(dir.getFiles(self.db, as_iter=True)) as dirFileIter:
+                self.assertEqual(next(dirFileIter), len(files[dir.id]))
+
+            dirFiles = dir.getFiles(self.db)
+            self.assertEqual(files[dir.id], [dirFiles.id for dirFiles in dirFiles])
 
 class TestFile(unittest.TestCase):
     """Test File class"""
