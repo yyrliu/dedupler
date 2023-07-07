@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import NoReturn
 from collections.abc import Generator
 
-import db as DB
+import db
 import core
 
 class SymlinkFound(Exception):
@@ -32,7 +32,7 @@ def dir_dfs(path) -> Generator[tuple[str, Path | None], None, None]:
 
 class Scanner():
     def __init__(self, db_path: Path | str) -> None:
-        self.db = DB.Database(db_path)
+        self.db = db.Database(db_path)
         self.db.initialize()
         self.dir_stack = []
 

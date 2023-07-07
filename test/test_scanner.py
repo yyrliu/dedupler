@@ -4,13 +4,13 @@ import logging
 import pathlib
 from itertools import count
 
-import scanner as SC
+import scanner
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s: %(name)s [%(levelname)s] %(message)s')
 
 class TestScanner(unittest.TestCase):
     def setUp(self):
-        self.scanner = SC.Scanner(':memory:')
+        self.scanner = scanner.Scanner(':memory:')
 
     def tearDown(self):
         pass
@@ -24,7 +24,7 @@ class TestScanner(unittest.TestCase):
 
 class TestFileHandler(unittest.TestCase):
     def setUp(self):
-        self.scanner = SC.Scanner(':memory:')
+        self.scanner = scanner.Scanner(':memory:')
 
     def tearDown(self):
         pass
@@ -42,7 +42,7 @@ class TestFileHandler(unittest.TestCase):
 
 class TestDirHandler(unittest.TestCase):
     def setUp(self):
-        self.scanner = SC.Scanner(':memory:')
+        self.scanner = scanner.Scanner(':memory:')
         patcher = patch('core.Dir.insert', side_effect=(Mock(id=i) for i in count()))
         self.mock_core_dir_insert = patcher.start()
         self.addCleanup(patcher.stop)
@@ -89,7 +89,7 @@ class TestDirHandler(unittest.TestCase):
 
 class TestSymlinkHandler(unittest.TestCase):
     def setUp(self):
-        self.scanner = SC.Scanner(':memory:')
+        self.scanner = scanner.Scanner(':memory:')
 
     def tearDown(self):
         pass
@@ -97,12 +97,12 @@ class TestSymlinkHandler(unittest.TestCase):
     @patch('pathlib.Path')
     def test_symlink_handler(self, mock_Path):
         path = pathlib.Path("/test/symlink")
-        with self.assertRaises(SC.SymlinkFound):
+        with self.assertRaises(scanner.SymlinkFound):
             self.scanner.symlink_handler(path)
 
 class TestHandlerSwitch(unittest.TestCase):
     def setUp(self):
-        self.scanner = SC.Scanner(':memory:')
+        self.scanner = scanner.Scanner(':memory:')
         patcher = patch.multiple(
             'scanner.Scanner',
             file_handler=DEFAULT,
@@ -139,12 +139,12 @@ class TestHandlerSwitch(unittest.TestCase):
 
     def test_unexpected_path_type(self):
         path = pathlib.Path("/test/unknown")
-        with self.assertRaises(SC.UnexpectedPathType):
+        with self.assertRaises(scanner.UnexpectedPathType):
             self.scanner.handlerSwitch('unknown', path)
 
 class TestDirDFS(unittest.TestCase):
     def setUp(self):
-        self.scanner = SC.Scanner(':memory:')
+        self.scanner = scanner.Scanner(':memory:')
         
     def tearDown(self):
         pass

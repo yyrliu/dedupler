@@ -1,16 +1,17 @@
 import unittest
 import logging
-import core
-import db as DB
 from sqlite3 import IntegrityError
 from contextlib import closing
+
+import core
+import db
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s: %(name)s [%(levelname)s] %(message)s')
 
 class TestBasebyDir(unittest.TestCase):
     """Test Base by Dir class"""
     def setUp(self):
-        self.db = DB.Database(':memory:')
+        self.db = db.Database(':memory:')
         self.db.initialize()
 
     def tearDown(self):
@@ -86,7 +87,7 @@ class TestBasebyDir(unittest.TestCase):
 class TestDir(unittest.TestCase):
     """Test Dir class"""
     def setUp(self):
-        self.db = DB.Database(':memory:')
+        self.db = db.Database(':memory:')
         self.db.initialize()
 
     def tearDown(self):
@@ -221,7 +222,7 @@ class TestDir(unittest.TestCase):
 class TestFile(unittest.TestCase):
     """Test File class"""
     def setUp(self):
-        self.db = DB.Database(':memory:')
+        self.db = db.Database(':memory:')
         self.db.initialize()
         dirDict = { "path": "dir", "parent_dir": None }
         self.rootDir = core.Dir.insert(dirDict, self.db)
@@ -265,7 +266,7 @@ class TestFile(unittest.TestCase):
 class TestPhoto(unittest.TestCase):
     """Test Photo class"""
     def setUp(self):
-        self.db = DB.Database(':memory:')
+        self.db = db.Database(':memory:')
         self.db.initialize()
         dirDict = { "path": "dir", "parent_dir": None }
         self.rootDir = core.Dir.insert(dirDict, self.db)
