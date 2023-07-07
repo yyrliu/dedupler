@@ -167,6 +167,27 @@ class TestDir(unittest.TestCase):
         rootDirs = [ dir['id'] for dir in dirIter ]
         self.assertEqual([1, 5], rootDirs)
 
+    def test_get_childern(self):
+        dirDicts = {
+            1: { "path": "dir1", "parent_dir": None },
+            2: { "path": "dir1/dir2", "parent_dir": 1 },
+            3: { "path": "dir1/dir2/dir3", "parent_dir": 2 },
+            4: { "path": "dir1/dir2/dir4", "parent_dir": 2 },
+            5: { "path": "dir1/dir5", "parent_dir": 1 },
+            6: { "path": "dir1/dir5/dir6", "parent_dir": 5 },
+            7: { "path": "dir1/dir5/dir7", "parent_dir": 5 },
+            8: { "path": "dir1/dir5/dir6/dir8", "parent_dir": 6 }
+        }
+
+        for dirDict in dirDicts.values():
+            core.Dir.insert(dirDict, self.db)
+
+        childern_of_2 = [3, 4]
+        with closing(core.Dir.fromId(2, self.db).getChilden(self.db, as_iter=True)) as dirIter:
+            length = next(dirIter)
+            self.assertEqual(length, len(childern_of_2))
+            self.assertEqual([ dir.id for dir in dirIter ], childern_of_2)
+
     def test_get_childern_dirs_by_DFS(self):
         dirDicts = {
             1: { "path": "dir1", "parent_dir": None },

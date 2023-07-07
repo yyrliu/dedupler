@@ -286,6 +286,15 @@ class Dir(Base):
         query_func = cls.queryFuncSelector(db, as_iter=as_iter)
         return query_func(query, cls if as_instance else None, count=count)
     
+    def getChilden(self, db: Database, as_iter: bool = False, count: bool = True, as_instance: bool = True) -> tuple[Self]:
+        """Returns all dirs in the directory"""
+        if not isinstance(db, Database):
+            raise ValueError("Database connection must be provided to retrieve dirs")
+        
+        query = self._sqlGetByForeignKeyQuery(parent_dir=self.id)
+        query_func = self.queryFuncSelector(db, as_iter=as_iter)
+        return query_func(query, self.__class__ if as_instance else None, count=count)
+
     def getChildenByDFS(self, db: Database, as_iter: bool = False, count: bool = True, as_instance: bool = True) -> tuple[Self]:
         """Returns all dirs in the directory in DFS order sorted by depth (deepest first)"""
         if not isinstance(db, Database):
