@@ -24,7 +24,11 @@ def dir_dfs(path) -> Generator[tuple[str, Path | None], None, None]:
         if p.is_dir():
             yield ('dir', p)
             yield from dir_dfs(p)
-            yield ('dir', None)
+            try:
+                yield ('dir', None)
+            except IndexError:
+                # Reached the end of the stack of directories
+                pass
 
 class Scanner():
     def __init__(self, db_path: Path | str) -> None:
@@ -47,7 +51,7 @@ class Scanner():
             "size": path.stat().st_size,
             "parent_dir": self.current_dir_id
         }
-        core.File.insert(file_dict, self.db._conn)
+        core.File.insert(file_dict, self.db)
 
     def dir_handler(self, path: Path) -> None:
         if path is None:
@@ -58,7 +62,7 @@ class Scanner():
                 "path": str(path),
                 "parent_dir": self.current_dir_id
             }
-            dir = core.Dir.insert(dir_dict, self.db._conn)
+            dir = core.Dir.insert(dir_dict, self.db)
             self.dir_stack.append((dir.id, path))
 
     @staticmethod
@@ -71,7 +75,7 @@ class Scanner():
         elif type == 'file':
             self.file_handler(path)
         elif type == 'symlink':
-            Scanner.symlink_handler(path)
+            self.symlink_handler(path)
         else:
             raise UnexpectedPathType
 
