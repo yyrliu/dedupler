@@ -77,7 +77,7 @@ class Database():
                 path TEXT NOT NULL UNIQUE,
                 size INTEGER NOT NULL CHECK( size >= 0 ),
                 parent_dir INTEGER NOT NULL,
-                hash TEXT,
+                partial_hash TEXT,
                 complete_hash TEXT,
                 duplicate_id INTEGER,
                 FOREIGN KEY(duplicate_id) REFERENCES duplicates(id),
@@ -104,7 +104,7 @@ class Database():
             );
 
             CREATE INDEX idx_files_dir_id ON files (parent_dir);
-            CREATE INDEX idx_files_hash ON files (hash);
+            CREATE INDEX idx_files_hash ON files (partial_hash);
             CREATE INDEX idx_files_duplicate_id ON files (duplicate_id);
             CREATE INDEX idx_files_complete_hash ON files (complete_hash);
             CREATE INDEX idx_photos_file_id ON photos (file);

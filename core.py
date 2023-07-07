@@ -230,7 +230,7 @@ class File(Base):
     path: str
     size: int
     parent_dir: int
-    hash: str = None
+    partial_hash: str = None
     complete_hash: str = None
     duplicate_id: int = None
 

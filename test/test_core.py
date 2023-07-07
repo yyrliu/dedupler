@@ -238,7 +238,7 @@ class TestFile(unittest.TestCase):
             self.assertEqual(getattr(file, key), value)
         curs = self.db._conn.execute('SELECT * FROM files')
         self.assertDictEqual(curs.fetchone(), {
-            'id': 1, 'path': 'dir/file', 'size': 10, 'parent_dir': self.rootDir.id, 'hash': None, 'complete_hash': None, 'duplicate_id': None
+            'id': 1, 'path': 'dir/file', 'size': 10, 'parent_dir': self.rootDir.id, 'partial_hash': None, 'complete_hash': None, 'duplicate_id': None
         })
         curs.close()
 
@@ -253,14 +253,14 @@ class TestFile(unittest.TestCase):
     def test_set_complete_hash_to_None(self):
         fileDict = { "path": "dir/file", "size": 10, "parent_dir": self.rootDir.id }
         file = core.File.insert(fileDict, self.db)
-        file.update(self.db, hash='hash', complete_hash='complete_hash')
+        file.update(self.db, partial_hash='partial_hash', complete_hash='complete_hash')
         fileFromDB = core.File.fromId(file.id, self.db)
-        self.assertEqual(fileFromDB.hash, 'hash')
+        self.assertEqual(fileFromDB.partial_hash, 'partial_hash')
         self.assertEqual(fileFromDB.complete_hash, 'complete_hash')
         file.update(self.db, complete_hash=None)
         self.assertEqual(file.complete_hash, None)
         fileFromDB = core.File.fromId(file.id, self.db)
-        self.assertEqual(fileFromDB.hash, 'hash')
+        self.assertEqual(fileFromDB.partial_hash, 'partial_hash')
         self.assertEqual(fileFromDB.complete_hash, None)
 
 class TestPhoto(unittest.TestCase):
