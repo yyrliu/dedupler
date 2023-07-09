@@ -5,10 +5,14 @@ from contextlib import contextmanager
 from sqlite3 import Cursor
 import logging
 import json
+from pathlib import Path
 
 from db import Database
 
 logger = logging.getLogger(__name__)
+
+# set of extensions that are supported by PIL.Image
+img_extensions = ('.jpg', '.png', '.gif', '.tiff', '.jpeg', '.bmp')
 
 class SingleSet(set):
     def add(self, x):
@@ -239,6 +243,10 @@ class File(Base):
             raise ValueError("parent_dir is required to insert a new row")
         
         return super().insert(payload, db)
+    
+    @property
+    def is_image(self):
+        return Path(self.path).suffix in img_extensions
     
 @dataclass(kw_only=True)
 class Photo(Base):

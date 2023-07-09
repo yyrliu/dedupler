@@ -3,6 +3,8 @@ import subprocess
 import logging
 
 from scanner import Scanner
+from indexer import Indexer
+import core
 import db as DB
 
 logging_level = {
@@ -10,6 +12,8 @@ logging_level = {
     1: logging.INFO,
     2: logging.DEBUG
 }
+
+logger = logging.getLogger(__name__)
 
 def scan(args):
     print(f"Scanning: {args.path}")
@@ -20,9 +24,13 @@ def scan(args):
     if args.browse:
         subprocess.run(['sqlite_web', '--no-browser', args.db])
 
-def hash(args):
-    print(f"Hashing: {args.db}")
-    print(args)
+def index(args):
+    print(f"Indexing: {args.db}")
+    indexer = Indexer(db_path=args.db)
+    root_dirs = core.Dir.getAllRootDirs(indexer.db)
+    logger.info(f"Found root directories: {', '.join([dir.path for dir in root_dirs])}")
+    for dir in root_dirs:
+        indexer.index_files_in_dir(dir, recursive=True)
 
 def dump_db(args, db=None):
     print(f"Printing: {args.db}")
@@ -45,8 +53,8 @@ def main():
     parser_scan.add_argument('path', type=str, help='path to scan')
     parser_scan.set_defaults(func=scan)
 
-    parser_hash = subparsers.add_parser('hash', help='hash the database')
-    parser_hash.set_defaults(func=hash)
+    parser_index = subparsers.add_parser('index', help='index files registered in the database')
+    parser_index.set_defaults(func=index)
 
     parser_print = subparsers.add_parser('print', help='print the database')
     parser_print.add_argument('tables', type=str, nargs='*', default='all', help='table to print')
