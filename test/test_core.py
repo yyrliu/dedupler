@@ -12,7 +12,6 @@ class TestBasebyDir(unittest.TestCase):
     """Test Base by Dir class"""
     def setUp(self):
         self.db = db.Database(':memory:')
-        self.db.initialize()
 
     def tearDown(self):
         self.db.close()
@@ -88,7 +87,6 @@ class TestDir(unittest.TestCase):
     """Test Dir class"""
     def setUp(self):
         self.db = db.Database(':memory:')
-        self.db.initialize()
 
     def tearDown(self):
         self.db.close()
@@ -244,7 +242,6 @@ class TestFile(unittest.TestCase):
     """Test File class"""
     def setUp(self):
         self.db = db.Database(':memory:')
-        self.db.initialize()
         dirDict = { "path": "dir", "parent_dir": None }
         self.rootDir = core.Dir.insert(dirDict, self.db)
 
@@ -288,7 +285,6 @@ class TestPhoto(unittest.TestCase):
     """Test Photo class"""
     def setUp(self):
         self.db = db.Database(':memory:')
-        self.db.initialize()
         dirDict = { "path": "dir", "parent_dir": None }
         self.rootDir = core.Dir.insert(dirDict, self.db)
         fileDict = { "path": "dir/file", "size": 10, "parent_dir": self.rootDir.id }

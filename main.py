@@ -9,7 +9,7 @@ import db as DB
 
 def scan(args):
     print(f"Scanning: {args.path}")
-    scanner = Scanner(db_path=args.db)
+    scanner = Scanner(db_path=args.db, overwrite_db=args.force)
     scanner.scan(args.path)
     if args.tables:
         dump_db(args, scanner.db)
@@ -21,8 +21,8 @@ def hash(args):
 def dump_db(args, db=None):
     print(f"Printing: {args.db}")
 
-    if (db is None) or (not isinstance(db._conn, Connection)):
-        db = DB.Database('./test/test.db')
+    if db is None:
+        db = DB.Database(args.db)
 
     db.dumpTables(args.tables)
     
@@ -31,6 +31,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--db', type=str, help='path to database')
     parser.add_argument('-p', '--print', type=str, action='append', dest='tables', help='print results')
+    parser.add_argument('-f', '--force', action='store_true', help='force overwrite of existing database')
     subparsers = parser.add_subparsers(help='Functions')
 
     parser_scan = subparsers.add_parser('scan', help='scan the given path')

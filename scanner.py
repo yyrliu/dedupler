@@ -31,10 +31,9 @@ def dir_dfs(path) -> Generator[tuple[str, Path | None], None, None]:
                 pass
 
 class Scanner():
-    def __init__(self, db_path: Path | str) -> None:
-        self.db = db.Database(db_path)
-        self.db.initialize()
-        self.dir_stack = []
+    def __init__(self, db_path: Path | str, overwrite_db: bool = False) -> None:
+        self.db = db.Database(db_path, overwrite_db)
+        self.dir_stack: list[tuple[int, str]] = []
 
     @property
     def current_dir_id(self) -> int:

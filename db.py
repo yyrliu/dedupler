@@ -23,11 +23,22 @@ def dict_factory(cursor, row):
 
 class Database():
     # TODO: Move SQL statements to a separate file
-    def __init__(self, db_path: Path | str) -> None:
-        logger.info(f"Initializing database connection, db_path={db_path}")
+    def __init__(self, db_path: Path | str, overwrite_db: bool = False) -> None:
+        logger.info(f'Initializing database connection, db_path={db_path}')
+        
+        init_db = False
+        if db_path == ':memory:' or (not Path(db_path).exists()):
+            init_db = True
+
+        if overwrite_db:
+            logger.warning(f'Removing existing database at "{db_path}"')
+            Path(db_path).unlink()
+            init_db = True
+            
         self._conn = sqlite3.connect(db_path, isolation_level=None)
         self._conn.row_factory = dict_factory
-        self._curs = self._conn.cursor()
+        if init_db:
+            self.initialize()
 
     @contextmanager
     def query(self) -> Generator[sqlite3.Cursor, None, None]:
@@ -62,8 +73,9 @@ class Database():
             logger.info(f"Transaction rolled back successfully.")
 
     def initialize(self) -> None:
+        curs = self._conn.cursor()
         # cursor.executescript implicitly commit any pending transactions, cannot execute "BEGIN TRANSACTION" here.
-        self._curs.executescript("""--sql
+        curs.executescript("""--sql
             -- PRAGMA foreign_keys is a no-op within a transaction; foreign key constraint enforcement may only be enabled or disabled when there is no pending BEGIN or SAVEPOINT.
             PRAGMA foreign_keys = on;
             BEGIN;
@@ -114,7 +126,8 @@ class Database():
 
             COMMIT;
         """)
-        logger.info("Database initialized")
+        curs.close()
+        logger.info("Database tables initialized")
 
     def close(self) -> None:
         self._conn.close()
@@ -125,8 +138,9 @@ class Database():
             WHERE type='table'
             ORDER BY name;
         """
-        self._curs.execute(query)
-        self.tables = [row['name'] for row in self._curs.fetchall()]
+        curs = self._conn.cursor()
+        curs.execute(query)
+        self.tables = [row['name'] for row in curs.fetchall()]
         
         if 'all' in tables:
             for table in self.tables:
@@ -136,6 +150,8 @@ class Database():
                 if table not in self.tables:
                     raise ValueError(f"Invalid table name: {table}")
                 self._dumpTable(table)
+
+        curs.close()
 
     def _dumpTable(self, table: str) -> None:
         self._conn.row_factory = sqlite3.Row
