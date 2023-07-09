@@ -53,23 +53,23 @@ class Database():
             self.rollback(cursor)
             raise
         else:
-            logger.info(f"Transaction committed successfully.")
+            logger.debug(f"Transaction committed successfully.")
             cursor.execute("COMMIT;")
         finally:
             if self._conn.in_transaction:
-                logger.warning("Transaction is still active, rolling back...")
+                logger.warning("Open transaction detcted while cleaing up, rolling back...")
                 self.rollback(cursor)
             logger.debug("Closing cursor.")
             cursor.close()
 
     def rollback(self, cursor: sqlite3.Cursor):
         try:
-            logger.info(f"Trying to rowback transaction...")
+            logger.debug(f"Trying to rowback transaction...")
             cursor.execute("ROLLBACK;")
         except sqlite3.OperationalError as e:
-            logger.info(f"Rowback failed: {e}. The transaction may has already been rolled back automatically by the error response.", exc_info=True)
+            logger.warning(f"Rowback failed: {e}. The transaction may has already been rolled back automatically by the error response.", exc_info=True)
         else:
-            logger.info(f"Transaction rolled back successfully.")
+            logger.debug(f"Transaction rolled back successfully.")
 
     def initialize(self) -> None:
         curs = self._conn.cursor()
