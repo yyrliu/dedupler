@@ -1,28 +1,46 @@
-import hashlib
-from PIL import Image
-import imagehash
+from pathlib import Path
+from contextlib import closing
+from collections.abc import Mapping, Sequence, Generator, Callable
 
-def partial_hasher(path, size) -> str:
-    with open(path, 'rb') as f:
-        if size < 1024:
-            chunk = f.read()
-        else:
-            chunk = f.read(1024)
-    return hashlib.md5(chunk).hexdigest()
+import core
+import db
+import hash_functions as hf
 
-def image_hasher(path) -> str:
-    with Image.open(path) as img:
-        # TODO: Find best hash function
-        # https://github.com/JohannesBuchner/imagehash
-        hash = imagehash.average_hash(img)
-        return str(hash)
+class Hasher():
+    def __init__(self, db_path: Path | str) -> None:
+        self.db = db.Database(db_path)
+        self.hash_functions: dict[str, Callable] = {
+            'partial_hash': hf.partial_hasher,
+            'image_hash': hf.image_hasher,
+            'full_hash': hf.full_hasher
+        }
 
-def full_hasher(path, block_size=2**20) -> str:
-    md5 = hashlib.md5()
-    with open(path, 'rb') as f:
-        while True:
-            chunk = f.read(block_size)
-            if not chunk:
-                break
-            md5.update(chunk)
-    return md5.hexdigest()
+    def get_target_files(self, root: core.Dir) -> Generator[core.File, None, None]:
+        yield from root.getFiles(self.db)
+        for child_dir in root.getChildenByDFS(self.db):
+            yield from child_dir.getFiles(self.db)
+
+    def run_dir(self, dir: core.Dir, targets: list[str]) -> None:
+        for file in dir.getFiles(self.db):
+            self.run_one(file, targets)
+
+    def run_all(self, root: core.Dir, targets: list[str]) -> None:
+        for file in self.get_target_files(root):
+            self.run_one(file, targets)
+
+    def run_one(self, obj: core.File, targets: list[str] = ['partial_hash']) -> None:
+        hashes = self.file_hasher(obj, targets)
+        self.save_hash(obj, hashes)
+
+    def save_hash(self, obj: core.Dir | core.File, hashes: dict) -> None:
+        obj.update(self.db, **hashes)
+
+    def file_hasher(self, file: core.File, targets: list[str]) -> dict[str, str]:
+        hashes = {}
+        for target in targets:
+            try:
+                hashes[target] = self.hash_functions[target](Path(file.path))
+            except KeyError as e:
+                raise ValueError(f"Invalid hashing target: {target}") from e
+            
+        return hashes
