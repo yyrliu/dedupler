@@ -6,7 +6,7 @@ import core
 import db
 import hash_functions as hf
 
-class Hasher():
+class Indexer():
     def __init__(self, db_path: Path | str) -> None:
         self.db = db.Database(db_path)
         self.hash_functions: dict[str, Callable] = {
