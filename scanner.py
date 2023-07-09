@@ -33,10 +33,10 @@ def dir_dfs(path) -> Generator[tuple[str, Path | None], None, None]:
 class Scanner():
     def __init__(self, db_path: Path | str, overwrite_db: bool = False) -> None:
         self.db = db.Database(db_path, overwrite_db)
-        self.dir_stack: list[tuple[int, str]] = []
+        self.dir_stack: list[tuple[int, Path]] = []
 
     @property
-    def current_dir_id(self) -> int:
+    def current_dir_id(self) -> int | None:
         try:
             id, _ = self.dir_stack[-1]
         except IndexError:
@@ -79,5 +79,6 @@ class Scanner():
             raise UnexpectedPathType
 
     def scan(self, path: Path) -> None:
+        self.dir_handler(path)
         for type, p in dir_dfs(path):
             self.handlerSwitch(type, p)
