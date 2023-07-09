@@ -4,3 +4,4 @@ test/mock_data
 Lib
 Scripts
 pyvenv.cfg
+**.db

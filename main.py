@@ -1,11 +1,15 @@
 import argparse
-from sqlite3 import Connection
 import subprocess
 import logging
 
-import core
 from scanner import Scanner
 import db as DB
+
+logging_level = {
+    0: logging.WARNING,
+    1: logging.INFO,
+    2: logging.DEBUG
+}
 
 def scan(args):
     print(f"Scanning: {args.path}")
@@ -28,7 +32,6 @@ def dump_db(args, db=None):
 
     db.dumpTables(args.tables)
     
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--db', type=str, help='path to database')
@@ -50,11 +53,6 @@ def main():
     parser_print.set_defaults(func=dump_db)
 
     args = parser.parse_args()
-    logging_level = {
-        0: logging.WARNING,
-        1: logging.INFO,
-        2: logging.DEBUG
-    }
     logging.basicConfig(level=logging_level[args.verbose], format='%(asctime)s: %(name)s [%(levelname)s] %(message)s')
     args.func(args)
     
