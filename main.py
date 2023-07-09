@@ -1,5 +1,6 @@
 import argparse
 from sqlite3 import Connection
+import subprocess
 
 import core
 from scanner import Scanner
@@ -13,6 +14,8 @@ def scan(args):
     scanner.scan(args.path)
     if args.tables:
         dump_db(args, scanner.db)
+    if args.browse:
+        subprocess.run(['sqlite_web', '--no-browser', args.db])
 
 def hash(args):
     print(f"Hashing: {args.db}")
@@ -31,6 +34,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--db', type=str, help='path to database')
     parser.add_argument('-p', '--print', type=str, action='append', dest='tables', help='print results')
+    parser.add_argument('-b', '--browse', action='store_true', help='browse results in sqlite-web')
     parser.add_argument('-f', '--force', action='store_true', help='force overwrite of existing database')
     subparsers = parser.add_subparsers(help='Functions')
 
