@@ -1,12 +1,11 @@
 import argparse
 from sqlite3 import Connection
 import subprocess
+import logging
 
 import core
 from scanner import Scanner
 import db as DB
-
-
 
 def scan(args):
     print(f"Scanning: {args.path}")
@@ -36,6 +35,7 @@ def main():
     parser.add_argument('-p', '--print', type=str, action='append', dest='tables', help='print results')
     parser.add_argument('-b', '--browse', action='store_true', help='browse results in sqlite-web')
     parser.add_argument('-f', '--force', action='store_true', help='force overwrite of existing database')
+    parser.add_argument('-v', '--verbose', action='count', default=0, help='verbose output')
     subparsers = parser.add_subparsers(help='Functions')
 
     parser_scan = subparsers.add_parser('scan', help='scan the given path')
@@ -50,6 +50,12 @@ def main():
     parser_print.set_defaults(func=dump_db)
 
     args = parser.parse_args()
+    logging_level = {
+        0: logging.WARNING,
+        1: logging.INFO,
+        2: logging.DEBUG
+    }
+    logging.basicConfig(level=logging_level[args.verbose], format='%(asctime)s: %(name)s [%(levelname)s] %(message)s')
     args.func(args)
     
 if __name__ == "__main__":

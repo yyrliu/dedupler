@@ -9,7 +9,6 @@ import json
 from db import Database
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 class SingleSet(set):
     def add(self, x):

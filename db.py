@@ -7,7 +7,6 @@ from contextlib import contextmanager
 import json
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 def dict_factory(cursor, row):
     fields = [column[0] for column in cursor.description]
