@@ -242,7 +242,7 @@ class File(Base):
     
 @dataclass(kw_only=True)
 class Photo(Base):
-    file: int
+    file_id: int
     image_hash: str = None
     data_json: dict = field(default_factory=dict)
 

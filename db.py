@@ -97,10 +97,10 @@ class Database():
 
             CREATE TABLE photos (
                 id INTEGER PRIMARY KEY,
-                file INTEGER,
+                file_id INTEGER,
                 image_hash TEXT NOT NULL,
                 data_json TEXT,
-                FOREIGN KEY(file) REFERENCES files(id)
+                FOREIGN KEY(file_id) REFERENCES files(id)
             );
 
             CREATE TABLE dirs (
@@ -118,7 +118,7 @@ class Database():
             CREATE INDEX idx_files_hash ON files (partial_hash);
             CREATE INDEX idx_files_duplicate_id ON files (duplicate_id);
             CREATE INDEX idx_files_complete_hash ON files (complete_hash);
-            CREATE INDEX idx_photos_file_id ON photos (file);
+            CREATE INDEX idx_photos_file_id ON photos (file_id);
             CREATE INDEX idx_photos_image_hash ON photos (image_hash);
             CREATE INDEX idx_dirs_hash ON dirs (hash);
             CREATE INDEX idx_dirs_duplicate_id ON dirs (duplicate_id);

@@ -295,13 +295,13 @@ class TestPhoto(unittest.TestCase):
 
     def test_insert_photo(self):
         data = { "text": "text value", "number": 123 }
-        photoDict = { "file": self.file.id, "image_hash": "image_hash", "data_json": data }
+        photoDict = { "file_id": self.file.id, "image_hash": "image_hash", "data_json": data }
         photo = core.Photo.insert(photoDict, self.db)
         self.assertIsInstance(photo, core.Photo)
         for key, value in photoDict.items():
             self.assertEqual(getattr(photo, key), value)
         curs = self.db._conn.execute('SELECT * FROM photos')
         self.assertDictEqual(curs.fetchone(), {
-            'id': 1, 'file': self.file.id, 'image_hash': 'image_hash', 'data_json': data
+            'id': 1, 'file_id': self.file.id, 'image_hash': 'image_hash', 'data_json': data
         })
         curs.close()
